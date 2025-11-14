@@ -2,28 +2,37 @@
 #define MAT4_H
 
 #include "vec4.h"
+
 #include <array>
 
 /**
  * 4x4 matrix class for metric tensor g_μν and its inverse g^μν
  */
 class Mat4 {
-public:
+  public:
     std::array<std::array<double, 4>, 4> data;
 
     // Constructors
     Mat4() {
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j)
-                data[i][j] = (i == j) ? 1.0 : 0.0;  // Identity by default
+                data[i][j] = (i == j) ? 1.0 : 0.0; // Identity by default
     }
 
     // Accessors
-    std::array<double, 4>& operator[](size_t i) { return data[i]; }
-    const std::array<double, 4>& operator[](size_t i) const { return data[i]; }
+    std::array<double, 4>& operator[](size_t i) {
+        return data[i];
+    }
+    const std::array<double, 4>& operator[](size_t i) const {
+        return data[i];
+    }
 
-    double& operator()(size_t i, size_t j) { return data[i][j]; }
-    const double& operator()(size_t i, size_t j) const { return data[i][j]; }
+    double& operator()(size_t i, size_t j) {
+        return data[i][j];
+    }
+    const double& operator()(size_t i, size_t j) const {
+        return data[i][j];
+    }
 
     // Matrix-vector multiplication: g_μν * v^ν (lowers index)
     Vec4 operator*(const Vec4& v) const {
@@ -56,10 +65,12 @@ public:
         int mi = 0;
 
         for (int i = 0; i < 4; ++i) {
-            if (i == row) continue;
+            if (i == row)
+                continue;
             int mj = 0;
             for (int j = 0; j < 4; ++j) {
-                if (j == col) continue;
+                if (j == col)
+                    continue;
                 m[mi][mj] = data[i][j];
                 ++mj;
             }
@@ -67,9 +78,9 @@ public:
         }
 
         // 3x3 determinant
-        return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-             - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+        return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+               m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+               m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
     }
 
     // Compute inverse (using Gauss-Jordan elimination)
@@ -82,7 +93,7 @@ public:
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
                 aug[i][j] = temp.data[i][j];
-                aug[i][j+4] = (i == j) ? 1.0 : 0.0;
+                aug[i][j + 4] = (i == j) ? 1.0 : 0.0;
             }
         }
 
@@ -105,7 +116,8 @@ public:
 
             // Scale pivot row
             double pivot = aug[i][i];
-            if (std::abs(pivot) < 1e-12) continue;  // Singular matrix
+            if (std::abs(pivot) < 1e-12)
+                continue; // Singular matrix
 
             for (int j = 0; j < 8; ++j) {
                 aug[i][j] /= pivot;
@@ -125,7 +137,7 @@ public:
         // Extract inverse from right half
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
-                result.data[i][j] = aug[i][j+4];
+                result.data[i][j] = aug[i][j + 4];
             }
         }
 
@@ -138,10 +150,12 @@ public:
             os << "[";
             for (int j = 0; j < 4; ++j) {
                 os << m.data[i][j];
-                if (j < 3) os << ", ";
+                if (j < 3)
+                    os << ", ";
             }
             os << "]";
-            if (i < 3) os << "\n";
+            if (i < 3)
+                os << "\n";
         }
         return os;
     }

@@ -1,9 +1,10 @@
 #ifndef RAYTRACER_H
 #define RAYTRACER_H
 
-#include "schwarzschild.h"
 #include "integrator.h"
+#include "schwarzschild.h"
 #include "vec4.h"
+
 #include <cmath>
 #include <vector>
 
@@ -36,20 +37,20 @@ struct Color {
  * Camera for ray generation
  */
 struct Camera {
-    Vec4 position;      // Camera position in spacetime
-    Vec4 direction;     // Looking direction
-    Vec4 up;            // Up vector
-    double fov;         // Field of view in radians
-    double aspect;      // Aspect ratio (width/height)
+    Vec4 position;  // Camera position in spacetime
+    Vec4 direction; // Looking direction
+    Vec4 up;        // Up vector
+    double fov;     // Field of view in radians
+    double aspect;  // Aspect ratio (width/height)
 
     Camera(double distance = Rendering::CAMERA_DISTANCE,
            double field_of_view = Rendering::CAMERA_FOV * M_PI / 180.0,
-           double aspect_ratio = static_cast<double>(Rendering::WIDTH) / Rendering::HEIGHT)
-        : position(0.0, distance, M_PI/2.0, 0.0),  // (t, r, θ, φ)
+           double aspect_ratio = static_cast<double>(Rendering::WIDTH) /
+                                 Rendering::HEIGHT)
+        : position(0.0, distance, M_PI / 2.0, 0.0), // (t, r, θ, φ)
           direction(0.0, -1.0, 0.0, 0.0),           // Looking toward BH
           up(0.0, 0.0, 1.0, 0.0),                   // Up in θ direction
-          fov(field_of_view),
-          aspect(aspect_ratio) {}
+          fov(field_of_view), aspect(aspect_ratio) {}
 };
 
 /**
@@ -57,7 +58,7 @@ struct Camera {
  * Implements backward ray tracing through curved spacetime
  */
 class RayTracer {
-private:
+  private:
     Schwarzschild metric;
     GeodesicIntegrator integrator;
     Camera camera;
@@ -72,15 +73,15 @@ private:
         Schwarzschild::State state;
 
         // Camera position in spherical coordinates
-        double r_cam = camera.position.x();      // radial distance
-        double theta_cam = camera.position.y();  // polar angle
-        double phi_cam = camera.position.z();    // azimuthal angle
+        double r_cam = camera.position.x();     // radial distance
+        double theta_cam = camera.position.y(); // polar angle
+        double phi_cam = camera.position.z();   // azimuthal angle
 
         // Initial position
-        state[0] = 0.0;         // t
-        state[1] = r_cam;       // r
-        state[2] = theta_cam;   // θ
-        state[3] = phi_cam;     // φ
+        state[0] = 0.0;       // t
+        state[1] = r_cam;     // r
+        state[2] = theta_cam; // θ
+        state[3] = phi_cam;   // φ
 
         // Calculate initial velocity (4-velocity for photon)
         // For a photon, we need a null vector: g_μν v^μ v^ν = 0
@@ -99,7 +100,7 @@ private:
         // - radial velocity pointing inward
         // - angular velocity based on pixel offset
 
-        double v_r = -1.0;  // Moving toward black hole
+        double v_r = -1.0; // Moving toward black hole
         double v_theta = offset_y * 0.5;
         double v_phi = offset_x * 0.5;
 
@@ -110,9 +111,9 @@ private:
         double f = 1.0 - metric.r_s / r_cam;
         double sin_theta = std::sin(theta_cam);
 
-        double spatial_term = (v_r * v_r) / f
-                            + r_cam * r_cam * (v_theta * v_theta
-                            + sin_theta * sin_theta * v_phi * v_phi);
+        double spatial_term =
+            (v_r * v_r) / f +
+            r_cam * r_cam * (v_theta * v_theta + sin_theta * sin_theta * v_phi * v_phi);
 
         double v_t = std::sqrt(spatial_term / f);
 
@@ -175,8 +176,8 @@ private:
      * Disk is in equatorial plane (θ = π/2)
      */
     bool check_disk_intersection(const Schwarzschild::State& state_old,
-                                  const Schwarzschild::State& state_new,
-                                  double& intersection_r) const {
+                                 const Schwarzschild::State& state_new,
+                                 double& intersection_r) const {
         double theta_old = state_old[2];
         double theta_new = state_new[2];
         double r_old = state_old[1];
@@ -199,9 +200,8 @@ private:
         return false;
     }
 
-public:
-    RayTracer(const Schwarzschild& schw = Schwarzschild(),
-              const Camera& cam = Camera())
+  public:
+    RayTracer(const Schwarzschild& schw = Schwarzschild(), const Camera& cam = Camera())
         : metric(schw), integrator(schw), camera(cam) {}
 
     /**
@@ -228,7 +228,7 @@ public:
 
             // Condition A: Ray captured by black hole
             if (metric.is_captured(r)) {
-                return Color(0.0, 0.0, 0.0);  // Black
+                return Color(0.0, 0.0, 0.0); // Black
             }
 
             // Condition B: Ray escaped to infinity
@@ -258,7 +258,7 @@ public:
             for (int x = 0; x < width; ++x) {
                 // Normalize pixel coordinates to [-1, 1]
                 double px = 2.0 * (x + 0.5) / width - 1.0;
-                double py = 1.0 - 2.0 * (y + 0.5) / height;  // Flip Y
+                double py = 1.0 - 2.0 * (y + 0.5) / height; // Flip Y
 
                 Color color = trace_ray(px, py);
                 image[y * width + x] = color;
@@ -267,8 +267,8 @@ public:
             // Progress indicator
             if (y % 10 == 0) {
                 double progress = 100.0 * y / height;
-                std::cout << "\rRendering: " << static_cast<int>(progress)
-                         << "% complete" << std::flush;
+                std::cout << "\rRendering: " << static_cast<int>(progress) << "% complete"
+                          << std::flush;
             }
         }
 
@@ -277,7 +277,9 @@ public:
         return image;
     }
 
-    void set_camera(const Camera& cam) { camera = cam; }
+    void set_camera(const Camera& cam) {
+        camera = cam;
+    }
 };
 
 #endif // RAYTRACER_H

@@ -8,20 +8,20 @@
  * in C++ using the geodesic equations from Einstein's General Relativity.
  */
 
+#include "constants.h"
 #include "raytracer.h"
 #include "schwarzschild.h"
-#include "constants.h"
-#include <iostream>
-#include <fstream>
-#include <string>
+
 #include <chrono>
+#include <fstream>
+#include <iostream>
+#include <string>
 
 /**
  * Write image to PPM file (Portable Pixmap format)
  */
-void write_ppm(const std::string& filename,
-               const std::vector<Color>& image,
-               int width, int height) {
+void write_ppm(const std::string& filename, const std::vector<Color>& image, int width,
+               int height) {
     std::ofstream file(filename, std::ios::binary);
 
     if (!file) {
@@ -63,8 +63,8 @@ void print_info() {
     std::cout << "  Event horizon: " << Physics::r_horizon << "\n";
     std::cout << "  Photon sphere: " << Physics::r_photon << "\n";
     std::cout << "  ISCO radius: " << Physics::r_ISCO << "\n";
-    std::cout << "  Accretion disk: " << Physics::r_disk_inner
-              << " to " << Physics::r_disk_outer << "\n\n";
+    std::cout << "  Accretion disk: " << Physics::r_disk_inner << " to "
+              << Physics::r_disk_outer << "\n\n";
 
     std::cout << "Numerical Parameters:\n";
     std::cout << "  Integration method: RK4\n";
@@ -79,9 +79,12 @@ int main(int argc, char* argv[]) {
     int width = Rendering::WIDTH;
     int height = Rendering::HEIGHT;
 
-    if (argc > 1) output_file = argv[1];
-    if (argc > 2) width = std::atoi(argv[2]);
-    if (argc > 3) height = std::atoi(argv[3]);
+    if (argc > 1)
+        output_file = argv[1];
+    if (argc > 2)
+        width = std::atoi(argv[2]);
+    if (argc > 3)
+        height = std::atoi(argv[3]);
 
     // Print information
     print_info();
@@ -94,8 +97,7 @@ int main(int argc, char* argv[]) {
 
     // Create ray tracer
     Schwarzschild metric(Physics::r_s);
-    Camera camera(Rendering::CAMERA_DISTANCE,
-                  Rendering::CAMERA_FOV * M_PI / 180.0,
+    Camera camera(Rendering::CAMERA_DISTANCE, Rendering::CAMERA_FOV * M_PI / 180.0,
                   static_cast<double>(width) / height);
     RayTracer tracer(metric, camera);
 
@@ -106,11 +108,10 @@ int main(int argc, char* argv[]) {
     std::vector<Color> image = tracer.render(width, height);
 
     auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-        end_time - start_time);
+    auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
 
-    std::cout << "\nRendering completed in " << duration.count()
-              << " seconds\n";
+    std::cout << "\nRendering completed in " << duration.count() << " seconds\n";
 
     // Save image
     write_ppm(output_file, image, width, height);
@@ -119,8 +120,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  - Black region: Black hole shadow (event horizon)\n";
     std::cout << "  - Bright ring: Accretion disk with gravitational lensing\n";
     std::cout << "  - Distorted background: Gravitational lensing effects\n";
-    std::cout << "\nTo convert to PNG: convert " << output_file
-              << " output.png\n";
+    std::cout << "\nTo convert to PNG: convert " << output_file << " output.png\n";
 
     return 0;
 }

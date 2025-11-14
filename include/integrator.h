@@ -2,8 +2,9 @@
 #define INTEGRATOR_H
 
 #include "schwarzschild.h"
-#include <functional>
+
 #include <array>
+#include <functional>
 
 /**
  * 4th-Order Runge-Kutta (RK4) integrator for geodesic equations
@@ -19,11 +20,11 @@
  * Yₙ₊₁ = Yₙ + (k₁ + 2k₂ + 2k₃ + k₄)/6
  */
 class RK4Integrator {
-public:
+  public:
     using State = Schwarzschild::State;
     using DerivativeFunc = std::function<State(double, const State&)>;
 
-private:
+  private:
     DerivativeFunc derivatives;
     double step_size;
 
@@ -49,7 +50,7 @@ private:
         return result;
     }
 
-public:
+  public:
     RK4Integrator(DerivativeFunc f, double h = Physics::STEP_SIZE)
         : derivatives(f), step_size(h) {}
 
@@ -64,24 +65,20 @@ public:
         State k1 = multiply(derivatives(lambda, y), step_size);
 
         // k2 = h * f(λ + h/2, Y + k1/2)
-        State k2 = multiply(derivatives(lambda + step_size/2.0,
-                                       add(y, multiply(k1, 0.5))),
-                           step_size);
+        State k2 = multiply(
+            derivatives(lambda + step_size / 2.0, add(y, multiply(k1, 0.5))), step_size);
 
         // k3 = h * f(λ + h/2, Y + k2/2)
-        State k3 = multiply(derivatives(lambda + step_size/2.0,
-                                       add(y, multiply(k2, 0.5))),
-                           step_size);
+        State k3 = multiply(
+            derivatives(lambda + step_size / 2.0, add(y, multiply(k2, 0.5))), step_size);
 
         // k4 = h * f(λ + h, Y + k3)
-        State k4 = multiply(derivatives(lambda + step_size,
-                                       add(y, k3)),
-                           step_size);
+        State k4 = multiply(derivatives(lambda + step_size, add(y, k3)), step_size);
 
         // Yₙ₊₁ = Yₙ + (k₁ + 2k₂ + 2k₃ + k₄)/6
         State result = y;
         for (size_t i = 0; i < 8; ++i) {
-            result[i] += (k1[i] + 2.0*k2[i] + 2.0*k3[i] + k4[i]) / 6.0;
+            result[i] += (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]) / 6.0;
         }
 
         return result;
@@ -108,26 +105,31 @@ public:
         return y;
     }
 
-    void set_step_size(double h) { step_size = h; }
-    double get_step_size() const { return step_size; }
+    void set_step_size(double h) {
+        step_size = h;
+    }
+    double get_step_size() const {
+        return step_size;
+    }
 };
 
 /**
  * Geodesic integrator specifically for Schwarzschild metric
  */
 class GeodesicIntegrator {
-private:
+  private:
     Schwarzschild metric;
     RK4Integrator integrator;
 
-public:
+  public:
     using State = Schwarzschild::State;
 
     GeodesicIntegrator(const Schwarzschild& schw, double step_size = Physics::STEP_SIZE)
-        : metric(schw),
-          integrator([this](double lambda, const State& y) {
-              return this->geodesic_derivatives(lambda, y);
-          }, step_size) {}
+        : metric(schw), integrator(
+                            [this](double lambda, const State& y) {
+                                return this->geodesic_derivatives(lambda, y);
+                            },
+                            step_size) {}
 
     /**
      * Compute derivatives for geodesic equation
@@ -137,21 +139,21 @@ public:
      * Last 4 components: accelerations (d²x^μ/dλ²)
      */
     State geodesic_derivatives(double lambda, const State& y) {
-        (void)lambda;  // Unused for Schwarzschild (metric doesn't depend on time)
+        (void)lambda; // Unused for Schwarzschild (metric doesn't depend on time)
         State dydt;
 
         // Position derivatives = velocities
-        dydt[0] = y[4];  // dt/dλ = v_t
-        dydt[1] = y[5];  // dr/dλ = v_r
-        dydt[2] = y[6];  // dθ/dλ = v_θ
-        dydt[3] = y[7];  // dφ/dλ = v_φ
+        dydt[0] = y[4]; // dt/dλ = v_t
+        dydt[1] = y[5]; // dr/dλ = v_r
+        dydt[2] = y[6]; // dθ/dλ = v_θ
+        dydt[3] = y[7]; // dφ/dλ = v_φ
 
         // Velocity derivatives = accelerations (from geodesic equation)
         auto accel = metric.geodesic_acceleration(y);
-        dydt[4] = accel[0];  // d²t/dλ²
-        dydt[5] = accel[1];  // d²r/dλ²
-        dydt[6] = accel[2];  // d²θ/dλ²
-        dydt[7] = accel[3];  // d²φ/dλ²
+        dydt[4] = accel[0]; // d²t/dλ²
+        dydt[5] = accel[1]; // d²r/dλ²
+        dydt[6] = accel[2]; // d²θ/dλ²
+        dydt[7] = accel[3]; // d²φ/dλ²
 
         return dydt;
     }
@@ -171,7 +173,9 @@ public:
         return metric.is_captured(r) || metric.has_escaped(r);
     }
 
-    const Schwarzschild& get_metric() const { return metric; }
+    const Schwarzschild& get_metric() const {
+        return metric;
+    }
 };
 
 #endif // INTEGRATOR_H

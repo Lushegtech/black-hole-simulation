@@ -1,11 +1,12 @@
 #ifndef SCHWARZSCHILD_H
 #define SCHWARZSCHILD_H
 
-#include "vec4.h"
-#include "mat4.h"
 #include "constants.h"
-#include <cmath>
+#include "mat4.h"
+#include "vec4.h"
+
 #include <array>
+#include <cmath>
 
 /**
  * Schwarzschild metric and geodesic equations
@@ -24,8 +25,8 @@
  * where δ = 0 for photons (null geodesics), δ = 1 for massive particles
  */
 class Schwarzschild {
-public:
-    double r_s;  // Schwarzschild radius
+  public:
+    double r_s; // Schwarzschild radius
 
     Schwarzschild(double schwarzschild_radius = Physics::r_s)
         : r_s(schwarzschild_radius) {}
@@ -44,13 +45,13 @@ public:
         Mat4 g;
 
         double sin_theta = std::sin(theta);
-        double f = 1.0 - r_s / r;  // (1 - rs/r)
+        double f = 1.0 - r_s / r; // (1 - rs/r)
 
         // Schwarzschild metric in spherical coordinates
-        g(0, 0) = -f;                    // g_tt
-        g(1, 1) = 1.0 / f;               // g_rr
-        g(2, 2) = r * r;                 // g_θθ
-        g(3, 3) = r * r * sin_theta * sin_theta;  // g_φφ
+        g(0, 0) = -f;                            // g_tt
+        g(1, 1) = 1.0 / f;                       // g_rr
+        g(2, 2) = r * r;                         // g_θθ
+        g(3, 3) = r * r * sin_theta * sin_theta; // g_φφ
 
         // Off-diagonal elements are zero (diagonal metric)
         g(0, 1) = g(1, 0) = 0.0;
@@ -135,18 +136,17 @@ public:
         accel[0] = -2.0 * Gamma.Gamma_t_tr * v_t * v_r;
 
         // d²r/dλ²
-        accel[1] = -Gamma.Gamma_r_tt * v_t * v_t
-                   - Gamma.Gamma_r_rr * v_r * v_r
-                   - Gamma.Gamma_r_thetatheta * v_theta * v_theta
-                   - Gamma.Gamma_r_phiphi * v_phi * v_phi;
+        accel[1] = -Gamma.Gamma_r_tt * v_t * v_t - Gamma.Gamma_r_rr * v_r * v_r -
+                   Gamma.Gamma_r_thetatheta * v_theta * v_theta -
+                   Gamma.Gamma_r_phiphi * v_phi * v_phi;
 
         // d²θ/dλ²
-        accel[2] = -2.0 * Gamma.Gamma_theta_rtheta * v_r * v_theta
-                   - Gamma.Gamma_theta_phiphi * v_phi * v_phi;
+        accel[2] = -2.0 * Gamma.Gamma_theta_rtheta * v_r * v_theta -
+                   Gamma.Gamma_theta_phiphi * v_phi * v_phi;
 
         // d²φ/dλ²
-        accel[3] = -2.0 * Gamma.Gamma_phi_rphi * v_r * v_phi
-                   - 2.0 * Gamma.Gamma_phi_thetaphi * v_theta * v_phi;
+        accel[3] = -2.0 * Gamma.Gamma_phi_rphi * v_r * v_phi -
+                   2.0 * Gamma.Gamma_phi_thetaphi * v_theta * v_phi;
 
         return accel;
     }
@@ -160,7 +160,7 @@ public:
         double v_t = y[4];
 
         Mat4 g = metric(r, theta);
-        return -g(0, 0) * v_t;  // E = -(1 - rs/r) * v_t
+        return -g(0, 0) * v_t; // E = -(1 - rs/r) * v_t
     }
 
     /**
@@ -172,14 +172,14 @@ public:
         double v_phi = y[7];
 
         Mat4 g = metric(r, theta);
-        return g(3, 3) * v_phi;  // L = r² sin²θ * v_φ
+        return g(3, 3) * v_phi; // L = r² sin²θ * v_φ
     }
 
     /**
      * Check if ray has been captured by black hole
      */
     bool is_captured(double r) const {
-        return r < r_s * 1.01;  // Small buffer for numerical stability
+        return r < r_s * 1.01; // Small buffer for numerical stability
     }
 
     /**

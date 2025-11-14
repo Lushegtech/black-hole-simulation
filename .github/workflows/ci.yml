@@ -37,8 +37,8 @@ jobs:
     - name: Test executable
       run: |
         cd build
-        ./black-hole-raytracer test_output.ppm 400 300
-        ls -lh test_output.ppm
+        ./black-hole-raytracer test_manual.ppm 100 75
+        ls -lh test_manual.ppm
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3
@@ -64,10 +64,13 @@ jobs:
     - name: Build
       run: cmake --build build --config Release
 
+    - name: Run tests
+      run: cd build && ctest --output-on-failure
+
     - name: Test executable
       run: |
         cd build
-        ./black-hole-raytracer test_output.ppm 400 300
+        ./black-hole-raytracer test_manual.ppm 100 75
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3
@@ -85,15 +88,20 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake ..
 
     - name: Build
       run: cmake --build build --config Release
 
+    - name: Run tests
+      run: |
+        cd build
+        ctest -C Release --output-on-failure
+
     - name: Test executable
       run: |
         cd build/Release
-        ./black-hole-raytracer.exe test_output.ppm 400 300
+        ./black-hole-raytracer.exe test_manual.ppm 100 75
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3
@@ -112,4 +120,4 @@ jobs:
 
     - name: Check code formatting
       run: |
-        find src include -name '*.cpp' -o -name '*.h' | xargs clang-format -n -Werror
+        find src include \( -name '*.cpp' -o -name '*.h' \) -exec clang-format --dry-run --Werror {} +

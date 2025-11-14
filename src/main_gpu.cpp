@@ -6,11 +6,12 @@
  * for real-time rendering of a Schwarzschild black hole.
  */
 
+#include "shader.h"
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <iostream>
 #include <cmath>
-#include "shader.h"
+#include <iostream>
 
 // Window settings
 const unsigned int SCR_WIDTH = 1280;
@@ -18,7 +19,7 @@ const unsigned int SCR_HEIGHT = 720;
 
 // Camera settings
 float camera_distance = 20.0f;
-float camera_theta = M_PI / 2.0f;  // Equatorial plane
+float camera_theta = M_PI / 2.0f; // Equatorial plane
 float camera_phi = 0.0f;
 float camera_fov = 60.0f * M_PI / 180.0f;
 
@@ -34,7 +35,7 @@ float lastFrame = 0.0f;
 /**
  * Process keyboard input
  */
-void processInput(GLFWwindow *window) {
+void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
@@ -80,7 +81,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos;  // Reversed: y-coordinates go from bottom to top
+    float yoffset = lastY - ypos; // Reversed: y-coordinates go from bottom to top
 
     lastX = xpos;
     lastY = ypos;
@@ -102,8 +103,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
  */
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     camera_fov -= (float)yoffset * 0.05f;
-    camera_fov = std::max(10.0f * M_PI / 180.0f,
-                         std::min(120.0f * M_PI / 180.0f, camera_fov));
+    camera_fov =
+        std::max(10.0f * M_PI / 180.0f, std::min(120.0f * M_PI / 180.0f, camera_fov));
 }
 
 int main() {
@@ -124,8 +125,7 @@ int main() {
 
     // Create window
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT,
-                                         "Black Hole Simulation - GPU",
-                                         NULL, NULL);
+                                          "Black Hole Simulation - GPU", NULL, NULL);
     if (window == NULL) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -164,18 +164,11 @@ int main() {
     Shader shader("../shaders/vertex.glsl", "../shaders/fragment.glsl");
 
     // Set up vertex data for fullscreen quad
-    float vertices[] = {
-        // positions        // texture coords
-        -1.0f,  1.0f, 0.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,
-         1.0f, -1.0f, 0.0f,  1.0f, 0.0f,
-         1.0f,  1.0f, 0.0f,  1.0f, 1.0f
-    };
+    float vertices[] = {// positions        // texture coords
+                        -1.0f, 1.0f,  0.0f, 0.0f, 1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                        1.0f,  -1.0f, 0.0f, 1.0f, 0.0f, 1.0f,  1.0f,  0.0f, 1.0f, 1.0f};
 
-    unsigned int indices[] = {
-        0, 1, 2,
-        0, 2, 3
-    };
+    unsigned int indices[] = {0, 1, 2, 0, 2, 3};
 
     // Create VAO, VBO, EBO
     unsigned int VAO, VBO, EBO;
@@ -197,7 +190,7 @@ int main() {
 
     // Texture coord attribute
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
-                         (void*)(3 * sizeof(float)));
+                          (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
     std::cout << "Starting real-time rendering...\n";
@@ -216,10 +209,9 @@ int main() {
         fps_timer += deltaTime;
         frame_count++;
         if (fps_timer >= 1.0f) {
-            std::cout << "FPS: " << frame_count
-                     << " | Camera: r=" << camera_distance
-                     << ", θ=" << camera_theta
-                     << ", φ=" << camera_phi << "    \r" << std::flush;
+            std::cout << "FPS: " << frame_count << " | Camera: r=" << camera_distance
+                      << ", θ=" << camera_theta << ", φ=" << camera_phi << "    \r"
+                      << std::flush;
             fps_timer = 0.0f;
             frame_count = 0;
         }

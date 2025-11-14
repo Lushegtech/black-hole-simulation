@@ -1,8 +1,9 @@
 #include "shader.h"
+
 #include <GL/glew.h>
 #include <fstream>
-#include <sstream>
 #include <iostream>
+#include <sstream>
 
 Shader::Shader(const char* vertexPath, const char* fragmentPath) {
     // 1. Retrieve vertex/fragment source code from file paths
@@ -32,8 +33,7 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath) {
         // Convert stream into string
         vertexCode = vShaderStream.str();
         fragmentCode = fShaderStream.str();
-    }
-    catch (std::ifstream::failure& e) {
+    } catch (std::ifstream::failure& e) {
         std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ" << std::endl;
         std::cerr << "  Vertex path: " << vertexPath << std::endl;
         std::cerr << "  Fragment path: " << fragmentPath << std::endl;
@@ -74,27 +74,27 @@ void Shader::use() const {
     glUseProgram(ID);
 }
 
-void Shader::setBool(const std::string &name, bool value) const {
+void Shader::setBool(const std::string& name, bool value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
 }
 
-void Shader::setInt(const std::string &name, int value) const {
+void Shader::setInt(const std::string& name, int value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Shader::setFloat(const std::string &name, float value) const {
+void Shader::setFloat(const std::string& name, float value) const {
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Shader::setVec2(const std::string &name, float x, float y) const {
+void Shader::setVec2(const std::string& name, float x, float y) const {
     glUniform2f(glGetUniformLocation(ID, name.c_str()), x, y);
 }
 
-void Shader::setVec3(const std::string &name, float x, float y, float z) const {
+void Shader::setVec3(const std::string& name, float x, float y, float z) const {
     glUniform3f(glGetUniformLocation(ID, name.c_str()), x, y, z);
 }
 
-void Shader::setVec4(const std::string &name, float x, float y, float z, float w) const {
+void Shader::setVec4(const std::string& name, float x, float y, float z, float w) const {
     glUniform4f(glGetUniformLocation(ID, name.c_str()), x, y, z, w);
 }
 
@@ -107,17 +107,18 @@ void Shader::checkCompileErrors(unsigned int shader, std::string type) {
         if (!success) {
             glGetShaderInfoLog(shader, 1024, NULL, infoLog);
             std::cerr << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n"
-                     << infoLog << "\n -- --------------------------------------------------- -- "
-                     << std::endl;
+                      << infoLog
+                      << "\n -- --------------------------------------------------- -- "
+                      << std::endl;
         }
-    }
-    else {
+    } else {
         glGetProgramiv(shader, GL_LINK_STATUS, &success);
         if (!success) {
             glGetProgramInfoLog(shader, 1024, NULL, infoLog);
             std::cerr << "ERROR::PROGRAM_LINKING_ERROR of type: " << type << "\n"
-                     << infoLog << "\n -- --------------------------------------------------- -- "
-                     << std::endl;
+                      << infoLog
+                      << "\n -- --------------------------------------------------- -- "
+                      << std::endl;
         }
     }
 }
