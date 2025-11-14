@@ -1,29 +1,20 @@
 #version 330 core
 
 /**
- * CINEMATIC Black Hole Fragment Shader
- * Inspired by Interstellar (2014) - DNGR renderer
- *
- * Features:
- * - Procedural starfield background
- * - Hot plasma accretion disk
- * - Relativistic Doppler shift and beaming
- * - Realistic colors and lighting
+ * ULTIMATE CINEMATIC Black Hole Shader
+ * Full animated simulation with particles, bloom, and turbulence
  */
 
 out vec4 FragColor;
 in vec2 TexCoord;
 
-// Uniforms
 uniform float u_time;
 uniform vec2 u_resolution;
-uniform vec3 u_camera_pos;  // Camera position (r, theta, phi)
+uniform vec3 u_camera_pos;
 uniform float u_fov;
 
-// Physical constants
 const float r_s = 2.0;
 const float r_horizon = 2.0;
-const float r_photon = 3.0;
 const float r_ISCO = 6.0;
 const float r_disk_inner = 6.0;
 const float r_disk_outer = 20.0;
@@ -33,73 +24,128 @@ const float STEP_SIZE = 0.15;
 const float PI = 3.14159265359;
 const float EPSILON = 1e-6;
 
-// State vector for geodesic integration
+// Particle system constants
+const int NUM_PARTICLES = 50;
+const float PARTICLE_SIZE = 0.3;
+
 struct State {
     float t, r, theta, phi;
     float v_t, v_r, v_theta, v_phi;
 };
 
-// Hash function for procedural generation
-float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+// Improved hash functions for better randomness
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
 }
 
-// Procedural starfield
+float hash12(vec2 p) {
+    vec3 p3  = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yzx+33.33);
+    return fract((p3.xx+p3.yz)*p3.zy);
+}
+
+// Noise function for turbulence
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// Fractal Brownian Motion for realistic turbulence
+float fbm(vec2 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+
+    for (int i = 0; i < 5; i++) {
+        value += amplitude * noise(p * frequency);
+        frequency *= 2.0;
+        amplitude *= 0.5;
+    }
+
+    return value;
+}
+
+// Enhanced starfield with twinkling
 vec3 get_starfield(vec3 dir) {
-    // Convert direction to spherical coordinates
     float theta = acos(dir.y);
     float phi = atan(dir.z, dir.x);
-
     vec2 uv = vec2(phi / (2.0 * PI) + 0.5, theta / PI);
 
-    // Multiple layers of stars at different scales
     vec3 color = vec3(0.0);
 
-    // Bright stars
+    // Large bright stars with twinkling
     for (int i = 0; i < 100; i++) {
-        vec2 starPos = vec2(hash(vec2(float(i), 0.0)), hash(vec2(float(i), 1.0)));
+        vec2 starPos = hash22(vec2(float(i), 0.0));
         float dist = length(uv - starPos);
-        if (dist < 0.002) {
-            float brightness = 1.0 - (dist / 0.002);
+
+        if (dist < 0.003) {
+            float brightness = 1.0 - (dist / 0.003);
             brightness = pow(brightness, 3.0);
-            // Star color variation
-            vec3 starColor = mix(vec3(0.8, 0.9, 1.0), vec3(1.0, 0.95, 0.8), hash(vec2(float(i), 2.0)));
+
+            // Twinkling effect
+            float twinkle = 0.7 + 0.3 * sin(u_time * 2.0 + float(i));
+            brightness *= twinkle;
+
+            // Star color
+            float hue = hash11(float(i) * 7.123);
+            vec3 starColor = mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.95, 0.7), hue);
             color += starColor * brightness;
         }
     }
 
-    // Dim stars
-    for (int i = 100; i < 500; i++) {
-        vec2 starPos = vec2(hash(vec2(float(i), 0.0)), hash(vec2(float(i), 1.0)));
+    // Medium stars
+    for (int i = 100; i < 300; i++) {
+        vec2 starPos = hash22(vec2(float(i), 1.0));
         float dist = length(uv - starPos);
-        if (dist < 0.001) {
-            float brightness = 0.3 * (1.0 - (dist / 0.001));
+
+        if (dist < 0.0015) {
+            float brightness = 0.5 * (1.0 - (dist / 0.0015));
             color += vec3(brightness);
         }
     }
 
-    // Milky Way-like glow
-    float galaxy = pow(abs(sin(uv.x * PI * 3.0)), 2.0) * pow(abs(sin(uv.y * PI)), 4.0);
-    color += vec3(0.15, 0.1, 0.2) * galaxy * 0.3;
+    // Dust and nebula
+    float nebula = fbm(uv * 5.0 + u_time * 0.02);
+    color += vec3(0.05, 0.02, 0.08) * nebula * 0.5;
 
-    // Background space color
-    color += vec3(0.01, 0.01, 0.015);
+    // Milky Way
+    float galaxy = pow(abs(sin(uv.x * PI * 3.0)), 2.0) * pow(abs(sin(uv.y * PI)), 4.0);
+    color += vec3(0.2, 0.15, 0.25) * galaxy * 0.4;
+
+    // Deep space
+    color += vec3(0.01, 0.01, 0.02);
 
     return clamp(color, 0.0, 1.0);
 }
 
-// Blackbody radiation color (Planck's law approximation)
+// Blackbody color with HDR
 vec3 blackbody_color(float temperature) {
-    // Simplified blackbody color for temperatures 1000K - 20000K
-    float t = clamp(temperature / 10000.0, 0.1, 2.0);
+    float t = clamp(temperature / 10000.0, 0.1, 3.0);
 
     vec3 color;
     if (t < 0.5) {
-        // Red to orange
-        color = mix(vec3(1.0, 0.2, 0.0), vec3(1.0, 0.6, 0.2), t * 2.0);
+        color = mix(vec3(1.0, 0.15, 0.0), vec3(1.0, 0.5, 0.1), t * 2.0);
+    } else if (t < 1.0) {
+        color = mix(vec3(1.0, 0.5, 0.1), vec3(1.0, 0.9, 0.6), (t - 0.5) * 2.0);
     } else {
-        // Orange to yellow-white
-        color = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.95, 0.8), (t - 0.5) * 2.0);
+        color = mix(vec3(1.0, 0.9, 0.6), vec3(0.9, 0.95, 1.0), (t - 1.0) / 2.0);
     }
 
     return color;
@@ -135,10 +181,7 @@ State geodesic_derivatives(State y) {
     State dydt;
     float r = y.r;
     float theta = y.theta;
-    float v_t = y.v_t;
-    float v_r = y.v_r;
-    float v_theta = y.v_theta;
-    float v_phi = y.v_phi;
+    float v_t = y.v_t, v_r = y.v_r, v_theta = y.v_theta, v_phi = y.v_phi;
 
     if (r < r_s + EPSILON) r = r_s + EPSILON;
     if (theta < EPSILON) theta = EPSILON;
@@ -220,32 +263,88 @@ State initialize_ray(vec2 pixel_coord) {
     return state;
 }
 
-vec3 get_disk_color_cinematic(float r, float v_phi_disk, float v_phi_photon) {
+// Animated accretion disk with turbulence
+vec3 get_disk_color_animated(float r, float phi, float v_phi_photon) {
     if (r < r_disk_inner || r > r_disk_outer) {
         return vec3(0.0);
     }
 
-    // Temperature profile: T ∝ r^(-3/4)
-    float temp_ratio = pow(r_disk_inner / r, 0.75);
-    float base_temp = 8000.0;  // Kelvin
-    float temperature = base_temp * temp_ratio;
+    // Rotating disk - angular position changes with time
+    float rotation_speed = 0.3;
+    float rotated_phi = phi + u_time * rotation_speed / r;
 
-    // Relativistic Doppler shift
-    // Disk rotates, so we compare angular velocities
-    float doppler_factor = 1.0 + (v_phi_disk - v_phi_photon) * 0.3;
+    // Temperature with turbulence
+    float temp_ratio = pow(r_disk_inner / r, 0.75);
+    float base_temp = 8000.0;
+
+    // Add turbulent hot spots
+    vec2 turb_coord = vec2(rotated_phi * 5.0, r * 0.5);
+    float turbulence = fbm(turb_coord + u_time * 0.5);
+    turbulence = pow(turbulence, 2.0);
+
+    // Hot spots create temperature variations
+    float temperature = base_temp * temp_ratio * (1.0 + turbulence * 0.5);
+
+    // Keplerian velocity
+    float v_phi_disk = sqrt(1.0 / r) * 0.5;
+
+    // Doppler shift + rotation
+    float doppler_factor = 1.0 + (v_phi_disk * cos(rotated_phi) - v_phi_photon) * 0.4;
     float observed_temp = temperature * doppler_factor;
 
-    // Blackbody color based on temperature
     vec3 color = blackbody_color(observed_temp);
 
-    // Relativistic beaming: brightness ∝ (doppler_factor)^3
-    float beaming = pow(max(doppler_factor, 0.1), 3.0);
+    // Relativistic beaming
+    float beaming = pow(max(0.15, doppler_factor), 3.5);
 
-    // Brightness falloff with radius
+    // Brightness with turbulent variations
     float brightness = pow(r_disk_inner / r, 2.5) * beaming;
-    brightness = clamp(brightness, 0.0, 3.0);
+    brightness *= (1.0 + turbulence * 0.3);
+    brightness = clamp(brightness, 0.0, 5.0);
 
     return color * brightness;
+}
+
+// Render accretion particles
+vec3 get_particle_contribution(vec3 ray_dir, float ray_r) {
+    vec3 particle_color = vec3(0.0);
+
+    for (int i = 0; i < NUM_PARTICLES; i++) {
+        float seed = float(i) * 13.7;
+
+        // Particle orbit parameters (initialized with hash)
+        float p_r = r_disk_inner + hash11(seed) * (r_disk_outer - r_disk_inner);
+        float p_phase = hash11(seed + 1.0) * 2.0 * PI;
+
+        // Orbital motion
+        float orbit_speed = 1.0 / sqrt(p_r) * 0.5;
+        float current_phi = p_phase + u_time * orbit_speed;
+
+        // Spiraling inward slowly
+        p_r -= u_time * 0.02 * hash11(seed + 2.0);
+        if (p_r < r_disk_inner) continue;
+
+        // 3D position
+        vec3 p_pos = vec3(
+            p_r * sin(PI/2.0) * cos(current_phi),
+            0.0,
+            p_r * sin(PI/2.0) * sin(current_phi)
+        );
+
+        // Distance to ray (simplified)
+        float dist_to_particle = length(cross(ray_dir, p_pos)) / length(ray_dir);
+
+        if (dist_to_particle < PARTICLE_SIZE && abs(ray_r - p_r) < 2.0) {
+            float particle_brightness = 1.0 - (dist_to_particle / PARTICLE_SIZE);
+            particle_brightness = pow(particle_brightness, 3.0);
+
+            // Hot particle color
+            vec3 p_color = vec3(1.0, 0.7, 0.3);
+            particle_color += p_color * particle_brightness * 0.5;
+        }
+    }
+
+    return particle_color;
 }
 
 bool check_disk_intersection(State s_old, State s_new, out float r_intersect, out float phi_intersect) {
@@ -265,6 +364,8 @@ vec3 trace_ray(vec2 pixel_coord) {
     State state = initialize_ray(pixel_coord);
     State state_old = state;
 
+    vec3 accumulated_color = vec3(0.0);
+
     for (int step = 0; step < MAX_STEPS; step++) {
         state_old = state;
         state = rk4_step(state, STEP_SIZE);
@@ -273,45 +374,76 @@ vec3 trace_ray(vec2 pixel_coord) {
         float theta = state.theta;
         float phi = state.phi;
 
-        // Captured by black hole
+        // Particle contribution along ray
+        vec3 ray_dir = vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi));
+        accumulated_color += get_particle_contribution(ray_dir, r) * 0.02;
+
+        // Captured
         if (r < r_horizon * 1.01) {
-            return vec3(0.0);
+            return accumulated_color;
         }
 
-        // Escaped to infinity - show starfield
+        // Escaped - starfield
         if (r > escape_radius) {
-            vec3 dir = vec3(
-                sin(theta) * cos(phi),
-                cos(theta),
-                sin(theta) * sin(phi)
-            );
-            return get_starfield(dir);
+            return accumulated_color + get_starfield(ray_dir);
         }
 
-        // Hit accretion disk
+        // Disk intersection
         float r_intersect, phi_intersect;
         if (check_disk_intersection(state_old, state, r_intersect, phi_intersect)) {
-            // Calculate disk rotation velocity (Keplerian orbit)
-            float v_phi_disk = sqrt(1.0 / r_intersect) * 0.5;
-            return get_disk_color_cinematic(r_intersect, v_phi_disk, state.v_phi);
+            vec3 disk_color = get_disk_color_animated(r_intersect, phi_intersect, state.v_phi);
+            return accumulated_color + disk_color;
         }
     }
 
-    return vec3(0.0);
+    return accumulated_color;
+}
+
+// Simple bloom effect
+vec3 apply_bloom(vec3 color, vec2 uv) {
+    vec3 bloom = vec3(0.0);
+
+    // Sample surrounding pixels
+    for (int x = -2; x <= 2; x++) {
+        for (int y = -2; y <= 2; y++) {
+            vec2 offset = vec2(float(x), float(y)) / u_resolution * 3.0;
+            vec3 sample_col = trace_ray(uv + offset);
+
+            // Only bloom bright areas
+            float brightness = max(max(sample_col.r, sample_col.g), sample_col.b);
+            if (brightness > 1.0) {
+                bloom += sample_col * 0.04;
+            }
+        }
+    }
+
+    return color + bloom * 0.5;
 }
 
 void main() {
     vec2 pixel_coord = (2.0 * TexCoord - 1.0);
     pixel_coord.y = -pixel_coord.y;
 
+    // Main ray trace
     vec3 color = trace_ray(pixel_coord);
 
-    // Tone mapping and color grading
-    color = color / (color + vec3(1.0));  // Reinhard tone mapping
-    color = pow(color, vec3(0.8));  // Slight gamma adjustment for space
+    // Bloom (simplified - only for very bright pixels)
+    float brightness = max(max(color.r, color.g), color.b);
+    if (brightness > 1.5) {
+        color += color * (brightness - 1.5) * 0.3;
+    }
 
-    // Add slight blue tint to space
-    color = mix(color, color * vec3(0.9, 0.95, 1.0), 0.1);
+    // Tone mapping
+    color = color / (color + vec3(1.0));
+
+    // Color grading
+    color = pow(color, vec3(0.85));
+    color = mix(color, color * vec3(0.9, 0.95, 1.05), 0.1);
+
+    // Vignette
+    float dist = length(pixel_coord);
+    float vignette = 1.0 - smoothstep(0.7, 1.5, dist);
+    color *= vignette * 0.3 + 0.7;
 
     FragColor = vec4(color, 1.0);
 }
