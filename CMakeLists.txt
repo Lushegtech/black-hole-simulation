@@ -19,15 +19,39 @@ endif()
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# Source files
-set(SOURCES
+# Find OpenGL and related libraries (optional for GPU version)
+find_package(OpenGL)
+find_package(glfw3)
+find_package(GLEW)
+
+# CPU-based ray tracer (always build)
+set(CPU_SOURCES
     src/main.cpp
-    src/raytracer.cpp
-    src/vector3d.cpp
 )
 
-# Create executable
-add_executable(black-hole-raytracer ${SOURCES})
+add_executable(black-hole-raytracer ${CPU_SOURCES})
+target_link_libraries(black-hole-raytracer m)
+
+# GPU-based real-time renderer (build if OpenGL found)
+if(OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
+    message(STATUS "OpenGL found - building GPU renderer")
+
+    set(GPU_SOURCES
+        src/main_gpu.cpp
+        src/shader.cpp
+    )
+
+    add_executable(black-hole-gpu ${GPU_SOURCES})
+    target_link_libraries(black-hole-gpu
+        OpenGL::GL
+        glfw
+        GLEW::GLEW
+        m
+    )
+else()
+    message(STATUS "OpenGL not found - skipping GPU renderer")
+    message(STATUS "  Install: sudo apt-get install libglfw3-dev libglew-dev")
+endif()
 
 # Install targets
 install(TARGETS black-hole-raytracer DESTINATION bin)
