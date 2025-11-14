@@ -164,7 +164,8 @@ int main() {
     std::cout << "  ESC: Exit\n\n";
 
     // Build and compile shader program
-    Shader shader("../shaders/vertex.glsl", "../shaders/fragment.glsl");
+    // Shaders are copied to build directory by CMake
+    Shader shader("shaders/vertex.glsl", "shaders/fragment.glsl");
 
     // Set up vertex data for fullscreen quad
     float vertices[] = {// positions        // texture coords
