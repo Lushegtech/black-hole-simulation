@@ -57,6 +57,14 @@ if(OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
     if(UNIX)
         target_link_libraries(black-hole-gpu m)
     endif()
+
+    # Copy shader files to build directory
+    add_custom_command(TARGET black-hole-gpu POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/shaders
+        ${CMAKE_BINARY_DIR}/shaders
+        COMMENT "Copying shaders to build directory"
+    )
 else()
     message(STATUS "OpenGL not found - skipping GPU renderer")
     message(STATUS "  Install: sudo apt-get install libglfw3-dev libglew-dev")
