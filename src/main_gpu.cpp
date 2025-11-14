@@ -67,6 +67,7 @@ void processInput(GLFWwindow* window) {
  * Framebuffer size callback
  */
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    (void)window;  // Unused parameter (required by GLFW callback signature)
     glViewport(0, 0, width, height);
 }
 
@@ -102,9 +103,11 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
  * Scroll callback for FOV control
  */
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    (void)window;   // Unused parameter
+    (void)xoffset;  // Unused parameter
     camera_fov -= (float)yoffset * 0.05f;
-    camera_fov =
-        std::max(10.0f * M_PI / 180.0f, std::min(120.0f * M_PI / 180.0f, camera_fov));
+    camera_fov = std::max(10.0f * (float)M_PI / 180.0f,
+                          std::min(120.0f * (float)M_PI / 180.0f, camera_fov));
 }
 
 int main() {
