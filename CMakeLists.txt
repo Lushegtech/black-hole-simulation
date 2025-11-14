@@ -9,7 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Compiler flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native")
+    # Use -O3 for release, but skip -march=native for portability in CI
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
 elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
@@ -30,7 +31,11 @@ set(CPU_SOURCES
 )
 
 add_executable(black-hole-raytracer ${CPU_SOURCES})
-target_link_libraries(black-hole-raytracer m)
+
+# Link math library (Unix-like systems only)
+if(UNIX)
+    target_link_libraries(black-hole-raytracer m)
+endif()
 
 # GPU-based real-time renderer (build if OpenGL found)
 if(OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
@@ -46,8 +51,12 @@ if(OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
         OpenGL::GL
         glfw
         GLEW::GLEW
-        m
     )
+
+    # Link math library (Unix-like systems only)
+    if(UNIX)
+        target_link_libraries(black-hole-gpu m)
+    endif()
 else()
     message(STATUS "OpenGL not found - skipping GPU renderer")
     message(STATUS "  Install: sudo apt-get install libglfw3-dev libglew-dev")
@@ -55,15 +64,20 @@ endif()
 
 # Install targets
 install(TARGETS black-hole-raytracer DESTINATION bin)
+if(TARGET black-hole-gpu)
+    install(TARGETS black-hole-gpu DESTINATION bin)
+endif()
 
 # Testing
 enable_testing()
 
-# Optional: Add tests if test files exist
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_vector3d.cpp")
-    add_executable(test_vector3d tests/test_vector3d.cpp src/vector3d.cpp)
-    add_test(NAME Vector3DTest COMMAND test_vector3d)
-endif()
+# Basic smoke test - verify the executable runs and produces output
+add_test(NAME BasicRenderTest
+    COMMAND black-hole-raytracer test_output.ppm 100 75
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Set a timeout for the test (10 seconds should be plenty)
+set_tests_properties(BasicRenderTest PROPERTIES TIMEOUT 10)
 
 # Print configuration
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

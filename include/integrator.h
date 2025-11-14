@@ -137,6 +137,7 @@ public:
      * Last 4 components: accelerations (d²x^μ/dλ²)
      */
     State geodesic_derivatives(double lambda, const State& y) {
+        (void)lambda;  // Unused for Schwarzschild (metric doesn't depend on time)
         State dydt;
 
         // Position derivatives = velocities

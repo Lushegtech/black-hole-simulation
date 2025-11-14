@@ -104,7 +104,6 @@ public:
 
         double sin_theta = std::sin(theta);
         double cos_theta = std::cos(theta);
-        double f = 1.0 - r_s / r;
 
         // Non-zero Christoffel symbols for Schwarzschild metric
         Gamma.Gamma_r_tt = (r_s * (r - r_s)) / (2.0 * r * r * r);
@@ -125,7 +124,7 @@ public:
      * Returns d²x^μ/dλ² = -Γ^μ_νσ (dx^ν/dλ)(dx^σ/dλ)
      */
     std::array<double, 4> geodesic_acceleration(const State& y) const {
-        double t = y[0], r = y[1], theta = y[2], phi = y[3];
+        double r = y[1], theta = y[2];
         double v_t = y[4], v_r = y[5], v_theta = y[6], v_phi = y[7];
 
         auto Gamma = christoffel(r, theta);

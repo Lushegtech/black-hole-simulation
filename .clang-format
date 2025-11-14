@@ -1,0 +1,33 @@
+---
+# Clang-Format configuration for Black Hole Simulation
+# Based on LLVM style with some customizations
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 90
+
+# Pointer and reference alignment
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Braces
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Includes
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# Namespaces
+NamespaceIndentation: None
+
+# Comments
+AlignTrailingComments: true
+
+# Other
+AlwaysBreakTemplateDeclarations: Yes
+Standard: c++17
