@@ -126,47 +126,119 @@ class RayTracer {
     }
 
     /**
-     * Get background color (simple checkerboard pattern for now)
+     * Hash function for procedural star generation
      */
-    Color get_background_color(double theta, double phi) const {
-        // Simple checkerboard pattern
-        int checker_x = static_cast<int>(std::floor(phi * 4.0 / M_PI));
-        int checker_y = static_cast<int>(std::floor(theta * 4.0 / M_PI));
-
-        bool is_white = (checker_x + checker_y) % 2 == 0;
-
-        if (is_white) {
-            return Color(0.8, 0.8, 0.8);
-        } else {
-            return Color(0.2, 0.2, 0.4);
-        }
+    double hash(double x, double y) const {
+        double val = std::sin(x * 127.1 + y * 311.7) * 43758.5453123;
+        return val - std::floor(val);
     }
 
     /**
-     * Get accretion disk color at given radius
-     * Uses temperature profile T(r) ∝ r^(-3/4)
+     * Get cinematic starfield background
      */
-    Color get_disk_color(double r) const {
+    Color get_background_color(double theta, double phi) const {
+        // Normalize to [0,1] UV coordinates
+        double u = phi / (2.0 * M_PI) + 0.5;
+        double v = theta / M_PI;
+
+        Color color(0.0, 0.0, 0.0);
+
+        // Bright stars (100 stars)
+        for (int i = 0; i < 100; ++i) {
+            double star_u = hash(i, 0.0);
+            double star_v = hash(i, 1.0);
+            double dist = std::sqrt((u - star_u) * (u - star_u) + (v - star_v) * (v - star_v));
+
+            if (dist < 0.002) {
+                double brightness = 1.0 - (dist / 0.002);
+                brightness = std::pow(brightness, 3.0);
+
+                // Star color variation (blue to yellow-white)
+                double star_hue = hash(i, 2.0);
+                Color star_color = Color(0.8 + 0.2 * star_hue, 0.9 + 0.05 * star_hue,
+                                        1.0 - 0.2 * (1.0 - star_hue));
+                color = color + star_color * brightness;
+            }
+        }
+
+        // Dim background stars (100 more)
+        for (int i = 100; i < 200; ++i) {
+            double star_u = hash(i, 0.0);
+            double star_v = hash(i, 1.0);
+            double dist = std::sqrt((u - star_u) * (u - star_u) + (v - star_v) * (v - star_v));
+
+            if (dist < 0.001) {
+                double brightness = 0.3 * (1.0 - (dist / 0.001));
+                color = color + Color(brightness, brightness, brightness);
+            }
+        }
+
+        // Milky Way-like glow
+        double galaxy = std::pow(std::abs(std::sin(u * M_PI * 3.0)), 2.0) *
+                       std::pow(std::abs(std::sin(v * M_PI)), 4.0);
+        color = color + Color(0.15, 0.1, 0.2) * (galaxy * 0.3);
+
+        // Base space color
+        color = color + Color(0.01, 0.01, 0.015);
+
+        color.clamp();
+        return color;
+    }
+
+    /**
+     * Blackbody color approximation
+     */
+    Color blackbody_color(double temperature) const {
+        double t = std::min(2.0, std::max(0.1, temperature / 10000.0));
+
+        Color color;
+        if (t < 0.5) {
+            // Red to orange (cooler)
+            double mix_factor = t * 2.0;
+            color.r = 1.0;
+            color.g = 0.2 + 0.4 * mix_factor;
+            color.b = 0.0 + 0.2 * mix_factor;
+        } else {
+            // Orange to yellow-white (hotter)
+            double mix_factor = (t - 0.5) * 2.0;
+            color.r = 1.0;
+            color.g = 0.6 + 0.35 * mix_factor;
+            color.b = 0.2 + 0.6 * mix_factor;
+        }
+
+        return color;
+    }
+
+    /**
+     * Get cinematic accretion disk color with relativistic effects
+     * Includes Doppler shift and relativistic beaming
+     */
+    Color get_disk_color(double r, double v_phi_photon = 0.0) const {
         if (r < Physics::r_disk_inner || r > Physics::r_disk_outer) {
             return Color(0.0, 0.0, 0.0);
         }
 
-        // Temperature decreases with radius: T ∝ r^(-3/4)
+        // Temperature profile: T ∝ r^(-3/4)
         double temp_ratio = std::pow(Physics::r_disk_inner / r, 0.75);
-        double temperature = Rendering::DISK_TEMP_BASE * temp_ratio;
+        double base_temp = 8000.0; // Base temperature in Kelvin
+        double temperature = base_temp * temp_ratio;
 
-        // Simple blackbody color approximation
-        // Hot = blue-white, cooler = red-orange
-        double t_norm = std::min(1.0, temperature / 15000.0);
+        // Keplerian orbital velocity for disk
+        double v_phi_disk = std::sqrt(1.0 / r) * 0.5;
 
-        Color color;
-        color.r = 1.0;
-        color.g = 0.5 + 0.5 * t_norm;
-        color.b = t_norm;
+        // Relativistic Doppler shift
+        double doppler_factor = 1.0 + (v_phi_disk - v_phi_photon) * 0.3;
+        double observed_temp = temperature * doppler_factor;
 
-        // Brightness falls off with radius
-        double brightness = std::pow(Physics::r_disk_inner / r, 2.0);
-        brightness = std::min(1.0, brightness);
+        // Get blackbody color
+        Color color = blackbody_color(observed_temp);
+
+        // Relativistic beaming: brightness ∝ (doppler_factor)³
+        double beaming = std::pow(std::max(0.1, doppler_factor), 3.0);
+
+        // Brightness falloff with radius
+        double brightness = std::pow(Physics::r_disk_inner / r, 2.5) * beaming;
+        brightness = std::min(3.0, brightness);
 
         return color * brightness;
     }
