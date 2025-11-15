@@ -265,6 +265,9 @@ int main() {
     float fps_timer = 0.0f;
 
     while (!glfwWindowShouldClose(window)) {
+        // Process events FIRST - critical for Wayland/Hyprland responsiveness
+        glfwPollEvents();
+
         // Per-frame time logic
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
@@ -305,9 +308,8 @@ int main() {
             std::cerr << "OpenGL Error: " << err << std::endl;
         }
 
-        // Swap buffers and poll events
+        // Swap buffers
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 
     // Cleanup
