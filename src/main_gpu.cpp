@@ -214,7 +214,9 @@ int main() {
     std::cout << "  Vertex: " << vertex_path << "\n";
     std::cout << "  Fragment: " << fragment_path << "\n\n";
 
+    std::cout << "Compiling shaders...\n";
     Shader shader(vertex_path, fragment_path);
+    std::cout << "Shaders compiled successfully!\n\n";
 
     // Set up vertex data for fullscreen quad
     float vertices[] = {// positions        // texture coords
@@ -286,6 +288,12 @@ int main() {
         // Draw fullscreen quad
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // Check for OpenGL errors
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR && frame_count == 0) {
+            std::cerr << "OpenGL Error: " << err << std::endl;
+        }
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
