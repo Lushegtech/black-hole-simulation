@@ -8,239 +8,267 @@ uniform vec2 u_resolution;
 uniform vec3 u_camera_pos;
 uniform float u_fov;
 
-// Schwarzschild black hole parameters
+// Schwarzschild black hole
 const float rs = 2.0;                    // Schwarzschild radius
-const float r_inner = 2.5 * rs;          // Inner disk edge
-const float r_outer = 8.0 * rs;          // Outer disk edge
+const float r_isco = 3.0 * rs;           // ISCO for Schwarzschild
+const float r_inner = 2.8 * rs;          // Inner disk edge
+const float r_outer = 7.0 * rs;          // Outer disk edge
 const float r_photon = 1.5 * rs;         // Photon sphere
-const float MAX_R = 80.0;
-const int MAX_STEPS = 200;
-const float STEP_SIZE = 0.15;
+const float MAX_R = 100.0;
+const int MAX_STEPS = 250;
+const float STEP_SIZE = 0.12;
 const float PI = 3.14159265359;
 
-// Simple hash for procedural stars
-float hash13(vec3 p3) {
-    p3 = fract(p3 * 0.1031);
-    p3 += dot(p3, p3.zyx + 31.32);
-    return fract((p3.x + p3.y) * p3.z);
+// Procedural noise for subtle texture
+float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
 }
 
-// Star field background
+// Star field
 vec3 starfield(vec3 dir) {
     vec3 color = vec3(0.0);
 
-    // Convert to spherical for sampling
-    float theta = acos(clamp(dir.y, -1.0, 1.0));
-    float phi = atan(dir.z, dir.x);
+    // Simplified procedural stars
+    vec2 starCoord = vec2(atan(dir.z, dir.x), acos(clamp(dir.y, -1.0, 1.0)));
+    starCoord *= 100.0;
 
-    // Dense star field
-    for(int i = 0; i < 80; i++) {
-        float fi = float(i);
-        vec3 seed = vec3(fi * 12.9898, fi * 78.233, fi * 45.164);
-        float h = hash13(seed);
-        float starPhi = h * 2.0 * PI;
-        float starTheta = hash13(seed + vec3(1.0)) * PI;
+    for(int i = 0; i < 60; i++) {
+        vec2 offset = vec2(float(i) * 12.34, float(i) * 56.78);
+        vec2 cellCoord = floor(starCoord + offset);
+        float h = hash(cellCoord);
 
-        vec3 starDir = vec3(
-            sin(starTheta) * cos(starPhi),
-            cos(starTheta),
-            sin(starTheta) * sin(starPhi)
-        );
-
-        float dist = length(cross(dir, starDir));
-        if(dist < 0.003) {
-            float brightness = pow(1.0 - dist/0.003, 3.0);
-            float starColor = hash13(seed + vec3(2.0));
-            if(starColor > 0.8) {
-                color += vec3(1.0, 0.9, 0.7) * brightness; // Yellow stars
-            } else {
-                color += vec3(0.95, 0.95, 1.0) * brightness; // White/blue stars
+        if(h > 0.98) {
+            vec2 starPos = cellCoord + vec2(hash(cellCoord + vec2(1.0)), hash(cellCoord + vec2(2.0)));
+            float dist = length(starCoord + offset - starPos);
+            if(dist < 0.5) {
+                float brightness = pow(1.0 - dist/0.5, 4.0) * 0.8;
+                color += vec3(1.0, 0.95, 0.9) * brightness;
             }
         }
     }
 
-    // Faint galactic glow
-    color += vec3(0.05, 0.03, 0.08) * (1.0 - abs(dir.y) * 0.5);
+    // Subtle background glow
+    color += vec3(0.02, 0.015, 0.025);
 
     return color;
 }
 
-// EHT-INSPIRED DISK COLOR
-// This is the key to making it look like Sagittarius A*!
-vec3 accretionDisk(float r, float phi, int pass) {
-    // Normalized radius
+// EHT SAGITTARIUS A* ACCRETION DISK
+vec3 diskEmission(float r, float phi, int pass) {
+    // Distance from inner edge
     float t = (r - r_inner) / (r_outer - r_inner);
 
-    // EHT Sagittarius A* color palette: ORANGE/AMBER
-    vec3 hotColor = vec3(1.2, 0.9, 0.4);      // Bright yellow-orange
-    vec3 warmColor = vec3(1.0, 0.5, 0.15);    // Deep orange
-    vec3 coolColor = vec3(0.6, 0.2, 0.05);    // Dark red-orange
+    // EHT Color Palette: ORANGE/AMBER gradient
+    vec3 innerColor = vec3(1.5, 1.0, 0.5);     // Bright orange-yellow
+    vec3 midColor = vec3(1.2, 0.6, 0.2);       // Deep orange
+    vec3 outerColor = vec3(0.8, 0.3, 0.1);     // Dark red-orange
 
-    // Smooth gradient across disk
-    vec3 baseColor;
-    if(t < 0.3) {
-        baseColor = mix(hotColor, warmColor, t / 0.3);
+    vec3 diskColor;
+    if(t < 0.4) {
+        diskColor = mix(innerColor, midColor, t / 0.4);
     } else {
-        baseColor = mix(warmColor, coolColor, (t - 0.3) / 0.7);
+        diskColor = mix(midColor, outerColor, (t - 0.4) / 0.6);
     }
 
-    // Temperature falloff: hotter toward center
-    float temp = pow(r_inner / r, 0.75);
+    // Temperature profile: T ∝ r^(-3/4)
+    float temperature = pow(r_inner / r, 0.75);
 
-    // DOPPLER BOOSTING - This creates the asymmetric brightness!
-    // Approaching side is MUCH brighter
-    float velocity = sqrt(1.0 / r);  // Keplerian velocity
-    float doppler = 1.0 + velocity * sin(phi);
-    float beaming = pow(max(0.1, doppler), 3.5);  // Strong beaming effect
+    // DOPPLER BOOSTING - key to asymmetry!
+    // Disk rotating counter-clockwise as seen from above
+    float omega = sqrt(1.0 / (r * r * r));  // Keplerian angular velocity
+    float velocity = r * omega;              // Linear velocity
 
-    // Rotation patterns for visual interest
-    float spiral = sin(phi * 6.0 - sqrt(r) * 5.0 + u_time * 0.3);
-    float detail = sin(phi * 10.0 + u_time * 0.5) * cos(r * 2.0);
-    float pattern = spiral * 0.3 + detail * 0.2 + 0.5;
+    // Doppler factor: approaching side is brighter
+    float cosPhi = cos(phi);
+    float doppler = 1.0 + velocity * cosPhi;
 
-    // Brightness calculation
-    float brightness = 8.0 * temp * beaming * pattern;
+    // Relativistic beaming: I' = I * doppler^(3+α), α ~ 0 for thermal emission
+    float beaming = pow(max(0.05, doppler), 4.0);
 
-    // Fade secondary/tertiary images
+    // Add turbulent structure (not too much - EHT is relatively smooth)
+    float turbulence = 0.5 + 0.5 * sin(phi * 5.0 + r * 3.0 - u_time * 0.2);
+    turbulence *= 0.5 + 0.5 * sin(phi * 11.0 - r * 7.0 + u_time * 0.15);
+    turbulence = 0.6 + turbulence * 0.4;  // Keep it subtle
+
+    // Base intensity
+    float intensity = temperature * beaming * turbulence;
+
+    // Brightness multiplier
+    intensity *= 12.0;
+
+    // Fade secondary images (gravitationally lensed paths)
     if(pass > 0) {
-        brightness *= 0.4 / float(pass + 1);
+        intensity *= 0.3 / float(pass + 1);
     }
 
-    // Add inner rim glow (near ISCO)
-    if(r < r_inner * 1.2) {
-        float rimGlow = exp(-10.0 * (r - r_inner) / r_inner);
-        brightness *= (1.0 + rimGlow * 2.0);
+    // Hot inner edge glow
+    if(r < r_inner * 1.15) {
+        float edgeGlow = exp(-8.0 * (r - r_inner) / r_inner);
+        intensity *= (1.0 + edgeGlow * 3.0);
     }
 
-    return baseColor * brightness;
+    return diskColor * intensity;
 }
 
 void main() {
-    // Screen coordinates
+    // Normalized screen coordinates
     vec2 uv = (TexCoord * 2.0 - 1.0);
     uv.y = -uv.y;
 
-    // Camera setup
+    // Camera position in spherical coordinates
     float cam_r = u_camera_pos.x;
     float cam_theta = u_camera_pos.y;
     float cam_phi = u_camera_pos.z;
 
-    // Ray direction from camera
+    // FOV and aspect ratio
     float fov_scale = tan(u_fov * 0.5);
     float aspect = u_resolution.x / u_resolution.y;
 
-    // Initial ray in spherical coordinates
+    // Initialize ray in spherical coordinates
     float r = cam_r;
     float theta = cam_theta;
     float phi = cam_phi;
 
-    // Ray derivatives (velocity)
-    float dr = -1.0;                      // Radial: toward black hole
-    float dtheta = uv.y * fov_scale;      // Polar angle
-    float dphi = uv.x * fov_scale * aspect; // Azimuthal angle
+    // Ray direction (velocity in phase space)
+    float dr = -1.0;                          // Radial velocity (toward BH)
+    float dtheta = uv.y * fov_scale;          // Polar angle velocity
+    float dphi = uv.x * fov_scale * aspect;   // Azimuthal velocity
 
-    // Accumulators
-    vec3 color = vec3(0.0);
-    vec3 diskLight = vec3(0.0);
-    vec3 photonRingGlow = vec3(0.0);
-    int diskHits = 0;
+    // Conserved quantities for better integration
+    float E = sqrt(1.0 - rs / r);             // Energy at infinity
+    float L = r * r * dphi;                   // Angular momentum
 
-    // Ray trace through curved spacetime
+    // Light accumulators
+    vec3 finalColor = vec3(0.0);
+    vec3 accumulatedDisk = vec3(0.0);
+    vec3 photonRing = vec3(0.0);
+    int diskCrossings = 0;
+    bool hitHorizon = false;
+
+    // GEODESIC INTEGRATION
     for(int step = 0; step < MAX_STEPS; step++) {
-        // Schwarzschild metric factor
+        // Metric function
         float f = 1.0 - rs / r;
+
+        // Trig values
         float sin_theta = sin(theta);
         float cos_theta = cos(theta);
-        float sin2 = sin_theta * sin_theta;
+        float sin2_theta = sin_theta * sin_theta;
 
-        // Geodesic acceleration (from Einstein's equations)
-        float acc_r = rs / (2.0 * r * r) - f * (dtheta * dtheta + sin2 * dphi * dphi);
-        float acc_theta = -2.0 * dr * dtheta / r + sin_theta * cos_theta * dphi * dphi;
-        float acc_phi = -2.0 * dr * dphi / r - 2.0 * cos_theta * dtheta * dphi / max(sin_theta, 0.001);
+        if(sin_theta < 0.001) sin_theta = 0.001; // Avoid singularity
 
-        // RK4 integration step
-        dr += acc_r * STEP_SIZE;
-        dtheta += acc_theta * STEP_SIZE;
-        dphi += acc_phi * STEP_SIZE;
+        // Geodesic equations in Schwarzschild spacetime
+        // d²r/dλ²
+        float d2r = -rs / (2.0 * r * r) * f + f * (dtheta * dtheta + sin2_theta * dphi * dphi);
 
-        // Store old position
+        // d²θ/dλ²
+        float d2theta = -2.0 * dr * dtheta / r + sin_theta * cos_theta * dphi * dphi;
+
+        // d²φ/dλ²
+        float d2phi = -2.0 * dr * dphi / r - 2.0 * cos_theta * dtheta * dphi / sin_theta;
+
+        // Save old position
         float r_old = r;
         float theta_old = theta;
 
-        // Update position
+        // Euler step (simple but fast)
+        dr += d2r * STEP_SIZE;
+        dtheta += d2theta * STEP_SIZE;
+        dphi += d2phi * STEP_SIZE;
+
         r += dr * STEP_SIZE;
         theta += dtheta * STEP_SIZE;
         phi += dphi * STEP_SIZE;
 
-        // Check if captured by event horizon
-        if(r < rs * 1.1) {
-            color = vec3(0.0);  // Pure black
+        // Check if ray hit event horizon
+        if(r < rs * 1.05) {
+            hitHorizon = true;
             break;
         }
 
         // Check if ray escaped to infinity
         if(r > MAX_R) {
-            // Sample star field
-            vec3 rayDir = normalize(vec3(
+            // Sample background stars
+            vec3 rayDir = vec3(
                 sin(theta) * cos(phi),
                 cos(theta),
                 sin(theta) * sin(phi)
-            ));
-            color = starfield(rayDir);
+            );
+            finalColor = starfield(rayDir);
             break;
         }
 
         // ACCRETION DISK INTERSECTION
-        // Disk is in equatorial plane (theta = PI/2)
+        // Disk lies in equatorial plane (theta = PI/2)
         float equator = PI / 2.0;
-        if((theta_old - equator) * (theta - equator) < 0.0 && diskHits < 3) {
-            // Linear interpolation to find exact crossing point
-            float t_cross = (equator - theta_old) / (theta - theta_old);
-            float r_hit = r_old + t_cross * (r - r_old);
+        float crossing = (theta_old - equator) * (theta - equator);
 
-            if(r_hit >= r_inner && r_hit <= r_outer) {
-                diskLight += accretionDisk(r_hit, phi, diskHits);
-                diskHits++;
+        if(crossing < 0.0 && diskCrossings < 3) {
+            // Interpolate to find exact crossing point
+            float t = (equator - theta_old) / (theta - theta_old);
+            float r_cross = r_old + t * (r - r_old);
+
+            // Check if within disk radii
+            if(r_cross >= r_inner && r_cross <= r_outer) {
+                vec3 emission = diskEmission(r_cross, phi, diskCrossings);
+                accumulatedDisk += emission;
+                diskCrossings++;
             }
         }
 
-        // PHOTON RING GLOW
-        // Bright ring at r ≈ 1.5 * rs (unstable photon orbit)
-        if(r > r_photon * 0.9 && r < r_photon * 1.15) {
-            float ringDist = abs(r - r_photon) / r_photon;
-            float glow = exp(-20.0 * ringDist);
-            photonRingGlow += vec3(1.0, 0.75, 0.4) * glow * 0.8;
+        // PHOTON RING visualization
+        // Bright ring at photon sphere radius
+        if(r > r_photon * 0.95 && r < r_photon * 1.1) {
+            float ringDist = abs(r - r_photon) / (r_photon * 0.1);
+            float ringGlow = exp(-15.0 * ringDist);
+            photonRing += vec3(1.2, 0.8, 0.4) * ringGlow * 0.6;
         }
     }
 
-    // Combine all light sources
-    color += diskLight;
-    color += photonRingGlow;
+    // Combine all components
+    vec3 color = finalColor;
 
-    // BLOOM effect for bright regions
-    float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    if(luminance > 1.0) {
-        vec3 bloom = color * pow(luminance - 1.0, 1.2) * 0.5;
+    // Add disk emission
+    color += accumulatedDisk;
+
+    // Add photon ring
+    color += photonRing;
+
+    // If hit horizon, ensure it's pure black
+    if(hitHorizon) {
+        color = vec3(0.0);
+    }
+
+    // POST-PROCESSING for EHT look
+
+    // Strong bloom on bright areas
+    float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    if(lum > 1.5) {
+        vec3 bloom = color * pow(lum - 1.5, 1.5) * 0.6;
         color += bloom;
     }
 
-    // HDR tone mapping (Reinhard)
-    color = color / (color + vec3(0.5));
+    // Tone mapping: Reinhard with slight adjustment
+    color = color / (color + vec3(0.8));
 
-    // Gamma correction and contrast
-    color = pow(color, vec3(0.85));
-    color = (color - 0.5) * 1.15 + 0.5;
+    // Gamma correction
+    color = pow(color, vec3(0.9));
 
-    // Boost orange tones (EHT signature)
-    color.r *= 1.08;
+    // Boost contrast
+    color = (color - 0.5) * 1.2 + 0.5;
+
+    // Emphasize orange (EHT signature color)
+    color.r *= 1.1;
+    color.g *= 0.95;
 
     // Clamp
     color = clamp(color, 0.0, 1.0);
 
-    // Subtle vignette
-    float dist = length(uv);
-    float vignette = 1.0 - smoothstep(0.8, 1.6, dist);
-    color *= mix(0.7, 1.0, vignette);
+    // Vignette
+    float vignette = 1.0 - 0.3 * pow(length(uv), 2.0);
+    color *= vignette;
 
     FragColor = vec4(color, 1.0);
 }
