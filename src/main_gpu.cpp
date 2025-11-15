@@ -143,6 +143,9 @@ int main() {
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
 
+    // Disable VSync to prevent blocking on Wayland/Hyprland
+    glfwSwapInterval(0);
+
     // Initialize GLEW
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
