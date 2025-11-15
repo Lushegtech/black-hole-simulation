@@ -248,6 +248,16 @@ int main() {
                           (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    // Verify setup
+    std::cout << "Vertex buffer setup complete\n";
+    std::cout << "VAO: " << VAO << ", VBO: " << VBO << ", EBO: " << EBO << "\n\n";
+
+    // Check OpenGL state
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    std::cout << "Viewport: " << viewport[0] << ", " << viewport[1] << ", "
+              << viewport[2] << ", " << viewport[3] << "\n\n";
+
     std::cout << "Starting real-time rendering...\n";
 
     // Render loop
