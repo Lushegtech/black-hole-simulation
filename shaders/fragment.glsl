@@ -75,7 +75,7 @@ vec3 get_starfield(vec3 dir) {
     float phi = atan(dir.z, dir.x);
     vec2 uv = vec2(phi / (2.0 * PI) + 0.5, theta / PI);
 
-    vec3 color = vec3(0.0);
+    vec3 color = vec3(0.02, 0.01, 0.03);  // Deep space background
 
     // Bright stars
     for (int i = 0; i < 120; i++) {
@@ -122,6 +122,28 @@ vec3 blackbody_color(float temp) {
         // Cool: red-orange
         return mix(vec3(0.7, 0.2, 0.05), vec3(1.0, 0.5, 0.15), temp / 0.3);
     }
+
+    // Add subtle color variation based on brightness
+    color = mix(color, vec3(1.0, 0.6, 0.2), brightness * 0.2);
+
+    return color;
+}
+
+// Turbulence function for realistic disk structure
+float turbulence(float r, float phi, float time) {
+    // EHT observations show material swirls rapidly around Sgr A*
+    float angle = phi + time * 0.3 / sqrt(r);
+
+    // Multi-scale turbulent pattern
+    float turb = 0.0;
+    turb += 0.5 * sin(angle * 5.0 + r * 2.0);
+    turb += 0.3 * sin(angle * 11.0 - r * 3.5 + time * 0.5);
+    turb += 0.2 * sin(angle * 17.0 + r * 1.3 - time * 0.8);
+
+    // Radial variation
+    float radial = sin(r * 4.0 - time * 0.2) * 0.3;
+
+    return 0.7 + (turb + radial) * 0.3;
 }
 
 // KERR DISK: With frame dragging, Doppler, and beaming
@@ -224,7 +246,8 @@ State geodesic_derivatives(State s) {
     dydt.v_theta = -2.0 * Gamma_theta_rtheta * v_r * v_theta
                    - Gamma_theta_phiphi * v_phi * v_phi;
     dydt.v_phi = -2.0 * Gamma_phi_rphi * v_r * v_phi
-                 - 2.0 * Gamma_phi_thetaphi * v_theta * v_phi;
+                 - 2.0 * Gamma_phi_thetaphi * v_theta * v_phi
+                 - 2.0 * Gamma_phi_rt * v_t * v_r;  // Frame dragging!
 
     return dydt;
 }
