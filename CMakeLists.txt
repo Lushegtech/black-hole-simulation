@@ -65,6 +65,34 @@ if(OpenGL_FOUND AND glfw3_FOUND AND GLEW_FOUND)
         ${CMAKE_BINARY_DIR}/shaders
         COMMENT "Copying shaders to build directory"
     )
+
+    # NEW: Sagittarius A* simulator with compute shaders (requires OpenGL 4.3+)
+    message(STATUS "Building Sagittarius A* simulator (compute shader, OpenGL 4.3+)")
+
+    set(SGRA_SOURCES
+        src/black_hole.cpp
+        src/shader.cpp
+    )
+
+    add_executable(sagittarius-a ${SGRA_SOURCES})
+    target_link_libraries(sagittarius-a
+        OpenGL::GL
+        glfw
+        GLEW::GLEW
+    )
+
+    # Link math library (Unix-like systems only)
+    if(UNIX)
+        target_link_libraries(sagittarius-a m)
+    endif()
+
+    # Copy shader files to build directory
+    add_custom_command(TARGET sagittarius-a POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/shaders
+        ${CMAKE_BINARY_DIR}/shaders
+        COMMENT "Copying shaders to build directory"
+    )
 else()
     message(STATUS "OpenGL not found - skipping GPU renderer")
     message(STATUS "  Install: sudo apt-get install libglfw3-dev libglew-dev")
@@ -74,6 +102,9 @@ endif()
 install(TARGETS black-hole-raytracer DESTINATION bin)
 if(TARGET black-hole-gpu)
     install(TARGETS black-hole-gpu DESTINATION bin)
+endif()
+if(TARGET sagittarius-a)
+    install(TARGETS sagittarius-a DESTINATION bin)
 endif()
 
 # Testing

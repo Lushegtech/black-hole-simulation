@@ -1,0 +1,696 @@
+#version 430 core
+
+// Compute shader for General Relativistic Ray Tracing in Kerr spacetime
+// This implements a physically accurate simulation of Sagittarius A*
+
+// Workgroup size: 8x8 = 64 threads per workgroup
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Output texture (RGBA32F for HDR)
+layout(rgba32f, binding = 0) uniform writeonly image2D outputImage;
+
+// Uniform buffer for scene parameters
+layout(std140, binding = 0) uniform SceneParameters {
+    mat4 viewMatrix;
+    vec3 cameraPos;          // Camera position (r, θ, φ) in Boyer-Lindquist coords
+    float blackHoleSpin;     // Dimensionless spin a* ∈ [0, 1]
+    float blackHoleMass;     // Mass M (in geometric units)
+    float time;              // Simulation time
+    float inclination;       // Observer inclination angle (radians)
+    float diskInnerRadiusMult; // ISCO multiplier for inner disk edge
+    float diskOuterRadius;   // Outer disk radius (in M units)
+    vec2 resolution;         // Screen resolution
+    float fov;               // Field of view (radians)
+} params;
+
+// Physics constants
+const float PI = 3.14159265359;
+const float EQUATOR = PI / 2.0;
+const int MAX_STEPS = 2000;
+const float MAX_RADIUS = 200.0;
+const float TOLERANCE = 1e-5;     // Adaptive integrator tolerance
+const float H_INITIAL = 0.5;      // Initial step size
+const float H_MIN = 1e-6;         // Minimum step size
+const float H_MAX = 2.0;          // Maximum step size
+
+// Custom type for storing 5 metric components
+struct Vec5 {
+    float g0, g1, g2, g3, g4;
+};
+
+// Derived black hole parameters
+float M;        // Mass
+float a;        // Spin parameter a = a* × M
+float r_plus;   // Event horizon radius
+float r_isco;   // ISCO radius
+
+// ============================================================================
+// KERR METRIC FUNCTIONS
+// ============================================================================
+
+/**
+ * Compute ρ²(r, θ) = r² + a²cos²θ
+ */
+float rho2(float r, float theta) {
+    float cos_theta = cos(theta);
+    return r * r + a * a * cos_theta * cos_theta;
+}
+
+/**
+ * Compute Δ(r) = r² - 2Mr + a²
+ */
+float Delta(float r) {
+    return r * r - 2.0 * M * r + a * a;
+}
+
+/**
+ * Compute Σ(r, θ) = (r² + a²)² - a²Δsin²θ
+ */
+float Sigma(float r, float theta) {
+    float sin_theta = sin(theta);
+    float r2_plus_a2 = r * r + a * a;
+    return r2_plus_a2 * r2_plus_a2 - a * a * Delta(r) * sin_theta * sin_theta;
+}
+
+/**
+ * Compute ISCO radius (Bardeen, Press, & Teukolsky 1972)
+ */
+float compute_isco() {
+    float a_star = a / M;
+
+    float Z1 = 1.0 + pow(1.0 - a_star * a_star, 1.0/3.0) *
+               (pow(1.0 + a_star, 1.0/3.0) + pow(1.0 - a_star, 1.0/3.0));
+    float Z2 = sqrt(3.0 * a_star * a_star + Z1 * Z1);
+
+    return M * (3.0 + Z2 - sqrt((3.0 - Z1) * (3.0 + Z1 + 2.0 * Z2)));
+}
+
+/**
+ * Inverse metric g^μν components at (r, θ)
+ * Returns: [g^tt, g^rr, g^θθ, g^φφ, g^tφ]
+ */
+Vec5 inverse_metric(float r, float theta) {
+    float rho_sq = rho2(r, theta);
+    float Delta_val = Delta(r);
+    float sin_theta = sin(theta);
+    float sin2_theta = sin_theta * sin_theta;
+
+    Vec5 g_inv;
+
+    // Diagonal components
+    g_inv.g0 = -(r * r + a * a + 2.0 * M * r * a * a * sin2_theta / rho_sq) / Delta_val; // g^tt
+    g_inv.g1 = Delta_val / rho_sq;                                                        // g^rr
+    g_inv.g2 = 1.0 / rho_sq;                                                              // g^θθ
+    g_inv.g3 = (Delta_val - a * a * sin2_theta) / (Delta_val * rho_sq * sin2_theta);     // g^φφ
+
+    // Off-diagonal
+    g_inv.g4 = -2.0 * M * r * a / (Delta_val * rho_sq); // g^tφ = g^φt
+
+    return g_inv;
+}
+
+/**
+ * Compute metric derivatives ∂g^μν/∂r and ∂g^μν/∂θ
+ * Returns two Vec5 arrays: [dg/dr, dg/dtheta]
+ * Each Vec5 contains: [d(g^tt), d(g^rr), d(g^θθ), d(g^φφ), d(g^tφ)]
+ */
+void metric_derivatives(float r, float theta, out Vec5 dg_dr, out Vec5 dg_dtheta) {
+    float sin_theta = sin(theta);
+    float cos_theta = cos(theta);
+    float sin2_theta = sin_theta * sin_theta;
+
+    float rho_sq = rho2(r, theta);
+    float Delta_val = Delta(r);
+
+    float drho2_dr = 2.0 * r;
+    float drho2_dtheta = -2.0 * a * a * sin_theta * cos_theta;
+    float dDelta_dr = 2.0 * r - 2.0 * M;
+
+    // ∂g^rr/∂r and ∂g^rr/∂θ
+    dg_dr.g1 = (dDelta_dr * rho_sq - Delta_val * drho2_dr) / (rho_sq * rho_sq);
+    dg_dtheta.g1 = -Delta_val * drho2_dtheta / (rho_sq * rho_sq);
+
+    // ∂g^θθ/∂r and ∂g^θθ/∂θ
+    dg_dr.g2 = -drho2_dr / (rho_sq * rho_sq);
+    dg_dtheta.g2 = -drho2_dtheta / (rho_sq * rho_sq);
+
+    // ∂g^tt/∂r (complex term)
+    float A = r * r + a * a + 2.0 * M * r * a * a * sin2_theta / rho_sq;
+    float dA_dr = 2.0 * r + 2.0 * M * a * a * sin2_theta / rho_sq -
+                  2.0 * M * r * a * a * sin2_theta * drho2_dr / (rho_sq * rho_sq);
+    dg_dr.g0 = -(dA_dr * Delta_val - A * dDelta_dr) / (Delta_val * Delta_val);
+
+    // ∂g^tt/∂θ
+    float dA_dtheta = 2.0 * M * r * a * a * 2.0 * sin_theta * cos_theta / rho_sq -
+                      2.0 * M * r * a * a * sin2_theta * drho2_dtheta / (rho_sq * rho_sq);
+    dg_dtheta.g0 = -dA_dtheta / Delta_val;
+
+    // ∂g^φφ/∂r
+    float B = Delta_val - a * a * sin2_theta;
+    float dB_dr = dDelta_dr;
+    dg_dr.g3 = (dB_dr * Delta_val * rho_sq * sin2_theta -
+                B * (dDelta_dr * rho_sq * sin2_theta + Delta_val * drho2_dr * sin2_theta)) /
+               (Delta_val * Delta_val * rho_sq * rho_sq * sin2_theta * sin2_theta);
+
+    // ∂g^φφ/∂θ
+    float dB_dtheta = -2.0 * a * a * sin_theta * cos_theta;
+    dg_dtheta.g3 = (dB_dtheta * Delta_val * rho_sq * sin2_theta +
+                    B * (-Delta_val * drho2_dtheta * sin2_theta -
+                         Delta_val * rho_sq * 2.0 * sin_theta * cos_theta)) /
+                   (Delta_val * Delta_val * rho_sq * rho_sq * sin2_theta * sin2_theta);
+
+    // ∂g^tφ/∂r
+    float C = -2.0 * M * r * a;
+    float dC_dr = -2.0 * M * a;
+    dg_dr.g4 = (dC_dr * Delta_val * rho_sq - C * (dDelta_dr * rho_sq + Delta_val * drho2_dr)) /
+               (Delta_val * Delta_val * rho_sq * rho_sq);
+
+    // ∂g^tφ/∂θ
+    dg_dtheta.g4 = C * Delta_val * drho2_dtheta / (Delta_val * Delta_val * rho_sq * rho_sq);
+}
+
+// ============================================================================
+// HAMILTONIAN GEODESIC INTEGRATOR
+// ============================================================================
+
+/**
+ * 8-component state vector: Y = [t, r, θ, φ, p_t, p_r, p_θ, p_φ]
+ */
+struct State {
+    vec4 pos;  // (t, r, θ, φ)
+    vec4 mom;  // (p_t, p_r, p_θ, p_φ)
+};
+
+/**
+ * Hamiltonian derivatives: dY/dλ
+ *
+ * Hamilton's equations:
+ * dx^μ/dλ = g^μν p_ν
+ * dp_μ/dλ = -(1/2)(∂g^νσ/∂x^μ) p_ν p_σ
+ */
+State hamiltonian_derivatives(State y) {
+    State dydt;
+
+    float r = y.pos.y;
+    float theta = y.pos.z;
+
+    // Get inverse metric
+    Vec5 g_inv = inverse_metric(r, theta);
+
+    // Position derivatives: dx^μ/dλ = g^μν p_ν
+    dydt.pos.x = g_inv.g0 * y.mom.x + g_inv.g4 * y.mom.w;  // dt/dλ
+    dydt.pos.y = g_inv.g1 * y.mom.y;                       // dr/dλ
+    dydt.pos.z = g_inv.g2 * y.mom.z;                       // dθ/dλ
+    dydt.pos.w = g_inv.g4 * y.mom.x + g_inv.g3 * y.mom.w;  // dφ/dλ
+
+    // Get metric derivatives
+    Vec5 dg_dr, dg_dtheta;
+    metric_derivatives(r, theta, dg_dr, dg_dtheta);
+
+    // Momentum derivatives: dp_μ/dλ = -(1/2)(∂g^νσ/∂x^μ) p_ν p_σ
+    dydt.mom.x = 0.0; // dp_t/dλ = 0 (time-independent metric)
+
+    // dp_r/dλ
+    dydt.mom.y = -0.5 * (dg_dr.g0 * y.mom.x * y.mom.x +
+                         dg_dr.g1 * y.mom.y * y.mom.y +
+                         dg_dr.g2 * y.mom.z * y.mom.z +
+                         dg_dr.g3 * y.mom.w * y.mom.w +
+                         2.0 * dg_dr.g4 * y.mom.x * y.mom.w);
+
+    // dp_θ/dλ
+    dydt.mom.z = -0.5 * (dg_dtheta.g0 * y.mom.x * y.mom.x +
+                         dg_dtheta.g1 * y.mom.y * y.mom.y +
+                         dg_dtheta.g2 * y.mom.z * y.mom.z +
+                         dg_dtheta.g3 * y.mom.w * y.mom.w +
+                         2.0 * dg_dtheta.g4 * y.mom.x * y.mom.w);
+
+    // dp_φ/dλ = 0 (axisymmetric metric)
+    dydt.mom.w = 0.0;
+
+    return dydt;
+}
+
+// ============================================================================
+// ADAPTIVE RKF45 INTEGRATOR
+// ============================================================================
+
+/**
+ * RKF45 Butcher tableau coefficients
+ */
+const float RKF_a2 = 1.0/4.0, RKF_a3 = 3.0/8.0, RKF_a4 = 12.0/13.0, RKF_a5 = 1.0, RKF_a6 = 1.0/2.0;
+const float RKF_b21 = 1.0/4.0;
+const float RKF_b31 = 3.0/32.0, RKF_b32 = 9.0/32.0;
+const float RKF_b41 = 1932.0/2197.0, RKF_b42 = -7200.0/2197.0, RKF_b43 = 7296.0/2197.0;
+const float RKF_b51 = 439.0/216.0, RKF_b52 = -8.0, RKF_b53 = 3680.0/513.0, RKF_b54 = -845.0/4104.0;
+const float RKF_b61 = -8.0/27.0, RKF_b62 = 2.0, RKF_b63 = -3544.0/2565.0, RKF_b64 = 1859.0/4104.0, RKF_b65 = -11.0/40.0;
+
+// 4th order
+const float RKF_c1 = 25.0/216.0, RKF_c3 = 1408.0/2565.0, RKF_c4 = 2197.0/4104.0, RKF_c5 = -1.0/5.0;
+
+// 5th order
+const float RKF_d1 = 16.0/135.0, RKF_d3 = 6656.0/12825.0, RKF_d4 = 28561.0/56430.0, RKF_d5 = -9.0/50.0, RKF_d6 = 2.0/55.0;
+
+State state_add(State a, State b) {
+    State result;
+    result.pos = a.pos + b.pos;
+    result.mom = a.mom + b.mom;
+    return result;
+}
+
+State state_scale(State s, float scalar) {
+    State result;
+    result.pos = s.pos * scalar;
+    result.mom = s.mom * scalar;
+    return result;
+}
+
+float state_norm(State s) {
+    return length(s.pos) + length(s.mom);
+}
+
+/**
+ * Adaptive RKF45 step
+ * Returns: true if step accepted, false if rejected
+ */
+bool rkf45_step(inout State y, inout float h) {
+    // Compute 6 stages
+    State k1 = hamiltonian_derivatives(y);
+    State k2 = hamiltonian_derivatives(state_add(y, state_scale(k1, h * RKF_b21)));
+    State k3 = hamiltonian_derivatives(state_add(state_add(y, state_scale(k1, h * RKF_b31)),
+                                                  state_scale(k2, h * RKF_b32)));
+    State k4 = hamiltonian_derivatives(state_add(state_add(state_add(y, state_scale(k1, h * RKF_b41)),
+                                                           state_scale(k2, h * RKF_b42)),
+                                                  state_scale(k3, h * RKF_b43)));
+    State k5 = hamiltonian_derivatives(state_add(state_add(state_add(state_add(y, state_scale(k1, h * RKF_b51)),
+                                                                      state_scale(k2, h * RKF_b52)),
+                                                           state_scale(k3, h * RKF_b53)),
+                                                  state_scale(k4, h * RKF_b54)));
+    State k6 = hamiltonian_derivatives(state_add(state_add(state_add(state_add(state_add(y, state_scale(k1, h * RKF_b61)),
+                                                                                state_scale(k2, h * RKF_b62)),
+                                                                      state_scale(k3, h * RKF_b63)),
+                                                           state_scale(k4, h * RKF_b64)),
+                                                  state_scale(k5, h * RKF_b65)));
+
+    // 4th order solution
+    State y4 = state_add(state_add(state_add(state_add(y, state_scale(k1, h * RKF_c1)),
+                                              state_scale(k3, h * RKF_c3)),
+                                   state_scale(k4, h * RKF_c4)),
+                        state_scale(k5, h * RKF_c5));
+
+    // 5th order solution
+    State y5 = state_add(state_add(state_add(state_add(state_add(y, state_scale(k1, h * RKF_d1)),
+                                                        state_scale(k3, h * RKF_d3)),
+                                             state_scale(k4, h * RKF_d4)),
+                                    state_scale(k5, h * RKF_d5)),
+                        state_scale(k6, h * RKF_d6));
+
+    // Error estimate
+    float error = state_norm(State(y5.pos - y4.pos, y5.mom - y4.mom));
+
+    // Compute optimal step size
+    float h_optimal;
+    if (error < 1e-12) {
+        h_optimal = H_MAX;
+    } else {
+        h_optimal = 0.9 * h * pow(TOLERANCE / error, 0.20);
+    }
+
+    h_optimal = clamp(h_optimal, H_MIN, H_MAX);
+    h_optimal = clamp(h_optimal, 0.1 * h, 5.0 * h);
+
+    // Accept or reject
+    if (error <= TOLERANCE) {
+        y = y5;  // Use more accurate 5th-order solution
+        h = h_optimal;
+        return true;
+    } else {
+        h = h_optimal;
+        return false;
+    }
+}
+
+// ============================================================================
+// ACCRETION DISK PHYSICS
+// ============================================================================
+
+/**
+ * Blackbody spectrum to RGB conversion
+ * Input: Temperature in Kelvin
+ * Output: RGB color (unnormalized)
+ */
+vec3 blackbody_to_rgb(float T) {
+    // Clamp temperature to reasonable range
+    T = clamp(T, 1000.0, 40000.0);
+
+    float t = T / 100.0;
+    vec3 rgb;
+
+    // Red
+    if (t <= 66.0) {
+        rgb.r = 1.0;
+    } else {
+        rgb.r = clamp(1.292936186 * pow(t - 60.0, -0.1332047592), 0.0, 1.0);
+    }
+
+    // Green
+    if (t <= 66.0) {
+        rgb.g = clamp(0.390081579 * log(t) - 0.631841444, 0.0, 1.0);
+    } else {
+        rgb.g = clamp(1.129890861 * pow(t - 60.0, -0.0755148492), 0.0, 1.0);
+    }
+
+    // Blue
+    if (t >= 66.0) {
+        rgb.b = 1.0;
+    } else if (t <= 19.0) {
+        rgb.b = 0.0;
+    } else {
+        rgb.b = clamp(0.543206789 * log(t - 10.0) - 1.196254089, 0.0, 1.0);
+    }
+
+    return rgb;
+}
+
+/**
+ * Get disk 4-velocity for circular Keplerian orbit at radius r
+ *
+ * Returns contravariant 4-velocity u^μ = (u^t, u^r, u^θ, u^φ)
+ * for a particle in a circular, equatorial (θ=π/2), prograde orbit.
+ *
+ * Derived from normalization condition g_μν u^μ u^ν = -1
+ * and circular orbit condition (Bardeen, Press, & Teukolsky 1972)
+ */
+vec4 disk_four_velocity(float r) {
+    // For circular equatorial orbits in Kerr spacetime
+    // Angular velocity: Ω = dφ/dt = u^φ / u^t
+
+    // Keplerian angular velocity for prograde orbits
+    // Ω = M^(1/2) / (r^(3/2) + a M^(1/2))
+    float r_sqrt = sqrt(r);
+    float M_sqrt = sqrt(M);
+    float Omega = M_sqrt / (r * r_sqrt + a * M_sqrt);
+
+    // Metric components at equatorial plane (θ = π/2)
+    float theta = EQUATOR;
+    float rho_sq = rho2(r, theta);  // = r² (since cos²(π/2) = 0)
+    float Delta_val = Delta(r);
+
+    // g_tt, g_tφ, g_φφ at equator
+    float g_tt = -(1.0 - 2.0 * M * r / rho_sq);
+    float g_tphi = -2.0 * M * r * a / rho_sq;
+    float g_phiphi = (r * r + a * a + 2.0 * M * r * a * a / rho_sq);
+
+    // From normalization g_μν u^μ u^ν = -1 with u^r = u^θ = 0:
+    // g_tt (u^t)² + 2 g_tφ u^t u^φ + g_φφ (u^φ)² = -1
+    // Substitute u^φ = Ω u^t:
+    // (g_tt + 2 g_tφ Ω + g_φφ Ω²) (u^t)² = -1
+
+    float A = g_tt + 2.0 * g_tphi * Omega + g_phiphi * Omega * Omega;
+    float u_t = 1.0 / sqrt(-A);  // Positive root for forward time direction
+
+    // Angular component
+    float u_phi = Omega * u_t;
+
+    // u^r = u^θ = 0 for circular equatorial orbit
+    return vec4(u_t, 0.0, 0.0, u_phi);
+}
+
+/**
+ * Novikov-Thorne disk temperature profile
+ * T ∝ r^(-3/4) for thin disk approximation
+ */
+float disk_temperature(float r) {
+    float T_base = 1e4;  // Base temperature scale (10,000 K)
+    return T_base * pow(r_isco / r, 0.75);
+}
+
+/**
+ * Compute covariant metric components at (r, θ)
+ * Returns g_μν for dot product calculations
+ */
+void covariant_metric(float r, float theta, out float g[4][4]) {
+    float rho_sq = rho2(r, theta);
+    float Delta_val = Delta(r);
+    float sin_theta = sin(theta);
+    float sin2_theta = sin_theta * sin_theta;
+
+    // Initialize to zero
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            g[i][j] = 0.0;
+
+    // Diagonal components
+    g[0][0] = -(1.0 - 2.0 * M * r / rho_sq);  // g_tt
+    g[1][1] = rho_sq / Delta_val;              // g_rr
+    g[2][2] = rho_sq;                          // g_θθ
+    g[3][3] = (r * r + a * a + 2.0 * M * r * a * a * sin2_theta / rho_sq) * sin2_theta;  // g_φφ
+
+    // Off-diagonal (Kerr has t-φ coupling)
+    g[0][3] = g[3][0] = -2.0 * M * r * a * sin2_theta / rho_sq;  // g_tφ = g_φt
+}
+
+/**
+ * Compute 4-vector dot product: p·u = g_μν p^μ u^ν
+ */
+float four_dot_product(vec4 p_covariant, vec4 u_contravariant, float r, float theta) {
+    float g[4][4];
+    covariant_metric(r, theta, g);
+
+    // We have p_μ (covariant) and need to compute g_μν p^μ u^ν
+    // First raise p: p^μ = g^μν p_ν
+    Vec5 g_inv = inverse_metric(r, theta);
+
+    vec4 p_contravariant;
+    p_contravariant.x = g_inv.g0 * p_covariant.x + g_inv.g4 * p_covariant.w;
+    p_contravariant.y = g_inv.g1 * p_covariant.y;
+    p_contravariant.z = g_inv.g2 * p_covariant.z;
+    p_contravariant.w = g_inv.g4 * p_covariant.x + g_inv.g3 * p_covariant.w;
+
+    // Now compute p·u = g_μν p^μ u^ν
+    float result = 0.0;
+    for (int mu = 0; mu < 4; mu++) {
+        for (int nu = 0; nu < 4; nu++) {
+            float p_val = (mu == 0 ? p_contravariant.x : (mu == 1 ? p_contravariant.y : (mu == 2 ? p_contravariant.z : p_contravariant.w)));
+            float u_val = (nu == 0 ? u_contravariant.x : (nu == 1 ? u_contravariant.y : (nu == 2 ? u_contravariant.z : u_contravariant.w)));
+            result += g[mu][nu] * p_val * u_val;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Shade accretion disk with full relativistic physics
+ *
+ * Implements proper redshift factor g = (p·u_obs) / (p·u_em)
+ * and relativistic beaming I_obs = I_em × g³
+ */
+vec3 shade_disk(State state_at_disk, float disk_radius) {
+    float r = disk_radius;
+    float theta = EQUATOR;
+
+    // Get disk 4-velocity (contravariant: u^μ)
+    vec4 u_em = disk_four_velocity(r);
+
+    // Observer 4-velocity at infinity (contravariant: u^μ)
+    // At spatial infinity, the observer is at rest: u^μ = (1, 0, 0, 0)
+    vec4 u_obs = vec4(1.0, 0.0, 0.0, 0.0);
+
+    // Photon 4-momentum (covariant: p_μ)
+    vec4 p_photon = state_at_disk.mom;
+
+    // Calculate redshift factor g = -(p·u_obs) / -(p·u_em)
+    // The negative signs come from the convention that energy E = -p_t
+    float p_dot_u_obs = -four_dot_product(p_photon, u_obs, r, theta);
+    float p_dot_u_em = -four_dot_product(p_photon, u_em, r, theta);
+
+    // Redshift factor
+    float g = p_dot_u_obs / p_dot_u_em;
+    g = clamp(g, 0.01, 100.0);  // Safety clamp for numerical stability
+
+    // Rest-frame temperature from Novikov-Thorne model
+    float T_em = disk_temperature(r);
+
+    // Observed temperature (Doppler shifted)
+    float T_obs = T_em * g;
+
+    // Relativistic beaming: I_obs = I_em × g³
+    // This captures Doppler shift + gravitational redshift + beaming
+    float beaming = pow(g, 3.0);
+
+    // Get color from blackbody spectrum
+    vec3 color = blackbody_to_rgb(T_obs);
+
+    // Apply intensity scaling with beaming factor
+    float intensity = beaming * 2.0;  // Base exposure adjustment
+
+    // Radial brightness profile (Novikov-Thorne: peaks near ISCO)
+    float radial_factor = pow(r_isco / r, 2.0);
+    intensity *= radial_factor;
+
+    return color * intensity;
+}
+
+// ============================================================================
+// BACKGROUND
+// ============================================================================
+
+/**
+ * Simple starfield background
+ */
+vec3 starfield(vec3 dir) {
+    // Procedural stars
+    vec2 coord = vec2(atan(dir.z, dir.x), acos(clamp(dir.y, -1.0, 1.0))) * 50.0;
+
+    float star = 0.0;
+    for (int i = 0; i < 30; i++) {
+        vec2 offset = vec2(float(i) * 12.34, float(i) * 56.78);
+        vec2 cellCoord = floor(coord + offset);
+        float h = fract(sin(dot(cellCoord, vec2(12.9898, 78.233))) * 43758.5453);
+
+        if (h > 0.985) {
+            vec2 starPos = cellCoord + vec2(h, fract(h * 7.531));
+            float dist = length(coord + offset - starPos);
+            if (dist < 0.3) {
+                star += pow(1.0 - dist/0.3, 3.0) * 0.5;
+            }
+        }
+    }
+
+    return vec3(star * 0.8, star * 0.85, star) + vec3(0.01, 0.008, 0.015);
+}
+
+// ============================================================================
+// RAY TRACING
+// ============================================================================
+
+/**
+ * Initialize photon state from camera
+ *
+ * Maps pixel coordinates to initial photon 4-position and 4-momentum
+ * following backward ray tracing from observer to black hole.
+ */
+State initialize_photon(vec2 pixel_coords) {
+    State state;
+
+    // Camera position (Boyer-Lindquist coordinates)
+    float cam_r = params.cameraPos.x;
+    float cam_theta = params.cameraPos.y;
+    float cam_phi = params.cameraPos.z;
+
+    // Initial position at camera
+    state.pos = vec4(0.0, cam_r, cam_theta, cam_phi);  // t=0 initially
+
+    // Compute ray direction in image plane
+    vec2 ndc = (pixel_coords / params.resolution) * 2.0 - 1.0;
+    ndc.y = -ndc.y;  // Flip Y for screen coordinates
+
+    float aspect = params.resolution.x / params.resolution.y;
+    float fov_scale = tan(params.fov * 0.5);
+
+    // Ray direction in camera's local frame
+    vec3 ray_dir = normalize(vec3(
+        ndc.x * fov_scale * aspect,
+        ndc.y * fov_scale,
+        -1.0  // Looking toward black hole (negative r direction)
+    ));
+
+    // Initial momentum components (covariant)
+    // For a distant observer at rest, we construct the photon momentum
+    // p_t = -E (energy, conserved; we normalize to E=1)
+    state.mom.x = -1.0;
+
+    // Radial momentum: photon traveling inward
+    // Scale by metric to get covariant component
+    float rho_sq = rho2(cam_r, cam_theta);
+    float Delta_val = Delta(cam_r);
+    state.mom.y = -sqrt(Delta_val / rho_sq) * ray_dir.z;  // p_r
+
+    // Angular momenta (from image plane offsets)
+    state.mom.z = ray_dir.y * rho_sq * 0.2;  // p_θ (scaled for FOV)
+    state.mom.w = ray_dir.x / sin(cam_theta) * 0.2;  // p_φ (scaled for FOV)
+
+    return state;
+}
+
+/**
+ * Main ray tracing function
+ */
+vec3 trace_ray(State state) {
+    float h = H_INITIAL;
+    float r_inner = r_isco * params.diskInnerRadiusMult;
+    float r_outer = params.diskOuterRadius * M;
+
+    for (int step = 0; step < MAX_STEPS; step++) {
+        State prev_state = state;
+        float prev_r = prev_state.pos.y;
+        float prev_theta = prev_state.pos.z;
+
+        // Adaptive integration step
+        int retries = 0;
+        while (!rkf45_step(state, h) && retries < 5) {
+            retries++;
+        }
+
+        if (retries >= 5) break;  // Failed to converge
+
+        float r = state.pos.y;
+        float theta = state.pos.z;
+
+        // Termination 1: Event horizon
+        if (r < r_plus * 1.01) {
+            return vec3(0.0);  // Pure black
+        }
+
+        // Termination 2: Escaped to infinity
+        if (r > MAX_RADIUS) {
+            vec3 dir = vec3(sin(theta) * cos(state.pos.w),
+                           cos(theta),
+                           sin(theta) * sin(state.pos.w));
+            return starfield(dir);
+        }
+
+        // Termination 3: Disk intersection
+        if ((prev_theta - EQUATOR) * (theta - EQUATOR) < 0.0) {
+            // Crossed equatorial plane
+            float t = abs((EQUATOR - prev_theta) / (theta - prev_theta));
+            float r_intersect = mix(prev_r, r, t);
+
+            if (r_intersect >= r_inner && r_intersect <= r_outer) {
+                return shade_disk(state, r_intersect);
+            }
+        }
+    }
+
+    return vec3(0.0, 0.1, 0.0);  // Error: green
+}
+
+// ============================================================================
+// MAIN ENTRY POINT
+// ============================================================================
+
+void main() {
+    // Get pixel coordinate
+    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+
+    // Initialize black hole parameters
+    M = params.blackHoleMass;
+    a = params.blackHoleSpin * M;
+    r_plus = M + sqrt(M * M - a * a);
+    r_isco = compute_isco();
+
+    // Initialize photon
+    State photon = initialize_photon(vec2(pixel_coords));
+
+    // Trace ray
+    vec3 color = trace_ray(photon);
+
+    // Tone mapping
+    color = color / (color + vec3(1.0));
+
+    // Gamma correction
+    color = pow(color, vec3(1.0/2.2));
+
+    // Write output
+    imageStore(outputImage, pixel_coords, vec4(color, 1.0));
+}
