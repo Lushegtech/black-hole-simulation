@@ -287,36 +287,9 @@ int main() {
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-        // Save frames for animation (first 120 frames = 4 seconds at 30fps)
-        static int saved_frames = 0;
-        if (saved_frames < 120 && frame_count == 0) {
-            std::vector<unsigned char> pixels(SCR_WIDTH * SCR_HEIGHT * 3);
-            glReadPixels(0, 0, SCR_WIDTH, SCR_HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-
-            char filename[256];
-            snprintf(filename, sizeof(filename), "output/frame_%04d.ppm", saved_frames);
-
-            FILE* f = fopen(filename, "wb");
-            if (f) {
-                fprintf(f, "P6\n%d %d\n255\n", SCR_WIDTH, SCR_HEIGHT);
-                // Flip vertically (OpenGL bottom-left origin)
-                for (int y = SCR_HEIGHT - 1; y >= 0; y--) {
-                    fwrite(&pixels[y * SCR_WIDTH * 3], 1, SCR_WIDTH * 3, f);
-                }
-                fclose(f);
-                saved_frames++;
-                std::cout << "\nSaved frame " << saved_frames << "/120\n";
-            }
-        }
-
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
-
-        // Auto-exit after saving all frames
-        if (saved_frames >= 120) {
-            glfwSetWindowShouldClose(window, true);
-        }
     }
 
     // Cleanup
