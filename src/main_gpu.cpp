@@ -11,7 +11,10 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cmath>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
+#include <vector>
 
 // Window settings
 const unsigned int SCR_WIDTH = 1280;
@@ -164,8 +167,54 @@ int main() {
     std::cout << "  ESC: Exit\n\n";
 
     // Build and compile shader program
-    // Shaders are copied to build directory by CMake
-    Shader shader("shaders/vertex.glsl", "shaders/fragment.glsl");
+    // Try multiple shader paths to handle different working directories
+    const char* vertex_paths[] = {
+        "shaders/vertex.glsl",           // From project root
+        "build/shaders/vertex.glsl",     // From project root (alt)
+        "../shaders/vertex.glsl",        // From build directory
+        nullptr
+    };
+    const char* fragment_paths[] = {
+        "shaders/fragment.glsl",
+        "build/shaders/fragment.glsl",
+        "../shaders/fragment.glsl",
+        nullptr
+    };
+
+    // Find shader files
+    const char* vertex_path = nullptr;
+    const char* fragment_path = nullptr;
+
+    for (int i = 0; vertex_paths[i] != nullptr; i++) {
+        std::ifstream test(vertex_paths[i]);
+        if (test.good()) {
+            vertex_path = vertex_paths[i];
+            break;
+        }
+    }
+    for (int i = 0; fragment_paths[i] != nullptr; i++) {
+        std::ifstream test(fragment_paths[i]);
+        if (test.good()) {
+            fragment_path = fragment_paths[i];
+            break;
+        }
+    }
+
+    if (!vertex_path || !fragment_path) {
+        std::cerr << "\nERROR: Could not find shader files!\n";
+        std::cerr << "Please run from the project root directory:\n";
+        std::cerr << "  cd /path/to/black-hole-simulation\n";
+        std::cerr << "  ./build/black-hole-gpu\n\n";
+        std::cerr << "Or ensure shaders/ directory exists in current location.\n";
+        glfwTerminate();
+        return -1;
+    }
+
+    std::cout << "Loading shaders:\n";
+    std::cout << "  Vertex: " << vertex_path << "\n";
+    std::cout << "  Fragment: " << fragment_path << "\n\n";
+
+    Shader shader(vertex_path, fragment_path);
 
     // Set up vertex data for fullscreen quad
     float vertices[] = {// positions        // texture coords
@@ -238,9 +287,36 @@ int main() {
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+        // Save frames for animation (first 120 frames = 4 seconds at 30fps)
+        static int saved_frames = 0;
+        if (saved_frames < 120 && frame_count == 0) {
+            std::vector<unsigned char> pixels(SCR_WIDTH * SCR_HEIGHT * 3);
+            glReadPixels(0, 0, SCR_WIDTH, SCR_HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+            char filename[256];
+            snprintf(filename, sizeof(filename), "output/frame_%04d.ppm", saved_frames);
+
+            FILE* f = fopen(filename, "wb");
+            if (f) {
+                fprintf(f, "P6\n%d %d\n255\n", SCR_WIDTH, SCR_HEIGHT);
+                // Flip vertically (OpenGL bottom-left origin)
+                for (int y = SCR_HEIGHT - 1; y >= 0; y--) {
+                    fwrite(&pixels[y * SCR_WIDTH * 3], 1, SCR_WIDTH * 3, f);
+                }
+                fclose(f);
+                saved_frames++;
+                std::cout << "\nSaved frame " << saved_frames << "/120\n";
+            }
+        }
+
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+        // Auto-exit after saving all frames
+        if (saved_frames >= 120) {
+            glfwSetWindowShouldClose(window, true);
+        }
     }
 
     // Cleanup
