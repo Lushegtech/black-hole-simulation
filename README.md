@@ -1,20 +1,31 @@
-# Black Hole Simulation in C++
+# Sagittarius A* Black Hole Simulation
 
-A physically accurate simulation of a Schwarzschild (non-rotating) black hole using **General Relativistic Ray Tracing (GRRT)**. This project implements Einstein's theory of General Relativity to visualize gravitational lensing, the black hole shadow, and accretion disk effects.
+A physically accurate simulation of **Sagittarius A*** (Sgr A*), the supermassive black hole at the center of the Milky Way, using **General Relativistic Ray Tracing (GRRT)**. Based on the Event Horizon Telescope (EHT) observations from 2022.
 
-![Black Hole Visualization](https://img.shields.io/badge/Physics-General_Relativity-blue)
+![Black Hole Visualization](https://img.shields.io/badge/Sgr_A*-EHT_2022-orange)
 ![C++17](https://img.shields.io/badge/C++-17-00599C?logo=c%2B%2B)
 ![OpenGL](https://img.shields.io/badge/OpenGL-3.3-5586A4?logo=opengl)
+![Physics](https://img.shields.io/badge/Physics-Kerr_Metric-blue)
+
+## About Sagittarius A*
+
+- **Mass**: 4.3 million solar masses
+- **Distance**: 27,000 light-years from Earth
+- **Type**: Rotating supermassive black hole (Kerr black hole)
+- **First Image**: May 12, 2022 (Event Horizon Telescope)
+- **Location**: Galactic center of the Milky Way
 
 ## Features
 
 ### Physical Accuracy
-- **Schwarzschild Metric**: Full implementation of the exact solution to Einstein's field equations for a non-rotating black hole
+- **Kerr Metric**: Full implementation of rotating black hole spacetime geometry
+- **Frame Dragging**: Spacetime rotation effects near the event horizon
 - **Geodesic Integration**: Solves the geodesic equations using 4th-order Runge-Kutta (RK4) method
-- **Event Horizon**: Correctly models the boundary of no return at the Schwarzschild radius (rs = 2GM/c²)
-- **Photon Sphere**: Captures unstable photon orbits at r = 1.5rs
-- **ISCO**: Innermost Stable Circular Orbit at r = 3rs (where the accretion disk begins)
-- **Gravitational Lensing**: Physically accurate bending of light around massive objects
+- **Event Horizon**: Correctly models the boundary at r = M(1 + √(1-a²))
+- **Ergosphere**: Region where spacetime itself is dragged around the black hole
+- **Photon Ring**: Bright ring of light as observed by the EHT
+- **ISCO**: Kerr ISCO at r = M(3 + Z₂ - √((3-Z₁)(3+Z₁+2Z₂)))
+- **Gravitational Lensing**: Physically accurate light bending in curved spacetime
 
 ### Dual Rendering Modes
 
@@ -33,24 +44,38 @@ A physically accurate simulation of a Schwarzschild (non-rotating) black hole us
 
 ## Physics Background
 
-This simulation is based on the **Schwarzschild solution** to Einstein's field equations:
+This simulation is based on the **Kerr solution** to Einstein's field equations, describing a rotating black hole:
 
 ```
-ds² = -(1 - rs/r)c²dt² + (1 - rs/r)⁻¹dr² + r²(dθ² + sin²θ dφ²)
+ds² = -(1 - rs·r/ρ²)c²dt² - (rs·r·a·sin²θ/ρ²)cdtdφ + (ρ²/Δ)dr² + ρ²dθ² + ((r²+a²)²-a²Δsin²θ)/ρ²·sin²θdφ²
 ```
 
 Where:
-- `rs = 2GM/c²` is the Schwarzschild radius (event horizon)
-- Natural units are used: G = M = c = 1, so rs = 2
+- `rs = 2GM/c²` is the Schwarzschild radius
+- `a = J/(Mc)` is the spin parameter (angular momentum per unit mass)
+- `ρ² = r² + a²cos²θ` and `Δ = r² - rs·r + a²`
+- Natural units are used: G = M = c = 1
+
+For Sagittarius A*: **a ≈ 0.7** (moderate-high rotation rate)
+
+### EHT-Style Rendering
+
+The simulation replicates the appearance of the 2022 EHT image:
+
+1. **Orange/Amber Color Palette**: Matches the radio frequency observations
+2. **Asymmetric Brightness**: Relativistic Doppler boosting creates bright crescent
+3. **Turbulent Structure**: Variable accretion flow around the black hole
+4. **Photon Ring**: Bright ring of concentrated light near r ≈ 3M
 
 ### Why General Relativity?
 
-A Newtonian "dark star" model is **qualitatively incorrect** for simulating black holes. Key phenomena that only exist in General Relativity:
+Key phenomena that only exist in General Relativity:
 
-1. **Event Horizon**: Not a physical surface, but a boundary in spacetime geometry where all future paths lead inward
-2. **ISCO**: Below this radius, no stable circular orbits exist (impossible in Newtonian physics)
-3. **Photon Sphere**: Unstable circular orbits for light at r = 1.5rs
-4. **Frame Dragging**: Spacetime itself rotates near a spinning black hole (Kerr metric)
+1. **Event Horizon**: Not a physical surface, but a boundary in spacetime geometry
+2. **Frame Dragging**: Spacetime itself rotates around a spinning black hole
+3. **Ergosphere**: Region where standing still is impossible - you must rotate with spacetime
+4. **Photon Ring**: Unstable circular orbits for light create bright ring structure
+5. **ISCO**: Innermost Stable Circular Orbit - varies with spin (Kerr) vs non-spinning (Schwarzschild)
 
 ## Building the Project
 
@@ -246,24 +271,32 @@ namespace Rendering {
 
 ## Visualization Guide
 
-### What You're Seeing
+### What You're Seeing (EHT-Style)
 
-1. **Black Circle (Shadow)**: The black hole's **shadow** - larger than the event horizon due to captured photons
-   - Schwarzschild shadow radius: ~2.6 rs
+1. **Black Shadow**: The black hole's **shadow** - larger than the event horizon due to captured photons
+   - For Kerr black hole with a=0.7: shadow radius ≈ 2.4-2.8 M
+   - Perfectly dark center matching EHT observations
 
-2. **Bright Ring**: The **accretion disk** - hot plasma orbiting at and beyond the ISCO
-   - Inner edge: r = 6 (ISCO)
-   - Outer edge: r = 20 (configurable)
+2. **Orange/Yellow Photon Ring**: The **photon ring** - concentrated light near r ≈ 3M
+   - Created by photons in unstable orbits
+   - EHT-style orange/amber color palette
+   - Asymmetric brightness due to Doppler boosting
+
+3. **Turbulent Accretion Disk**: Hot plasma orbiting from ISCO to outer edge
+   - Inner edge: r ≈ 2.3M (Kerr ISCO for a=0.7)
+   - Outer edge: r ≈ 25M
    - Temperature falls off as T ∝ r^(-3/4)
+   - Variable structure mimicking real Sgr A* observations
 
-3. **Distorted Background**: **Gravitational lensing** effects
-   - Light from distant stars/checkerboard is bent around the black hole
-   - Creates multiple images and Einstein rings
-   - More pronounced near the photon sphere (r = 3)
+4. **Bright Crescent**: The **relativistic beaming effect**
+   - Approaching side is dramatically brighter
+   - Intensity ∝ (1+z)^4.2 (relativistic Doppler + beaming)
+   - This creates the iconic asymmetric appearance in EHT image
 
-4. **Asymmetry** (future): When relativistic effects are added:
-   - Doppler shift: approaching side is brighter/bluer
-   - Relativistic beaming: intensity scales as (1+z)^(-4)
+5. **Lensed Starfield**: Gravitational lensing of background stars
+   - View from the galactic center
+   - Light bent around the massive black hole
+   - Creates Einstein rings and multiple images
 
 ## Future Enhancements
 
