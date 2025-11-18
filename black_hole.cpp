@@ -198,6 +198,13 @@ struct Engine {
             exit(EXIT_FAILURE);
         }
         cout << "OpenGL " << glGetString(GL_VERSION) << "\n";
+
+        // Check compute shader support
+        GLint maxComputeWorkGroupCount[3];
+        glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxComputeWorkGroupCount[0]);
+        glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &maxComputeWorkGroupCount[1]);
+        cout << "Max compute work groups: " << maxComputeWorkGroupCount[0] << "x" << maxComputeWorkGroupCount[1] << "\n";
+
         this->shaderProgram = CreateShaderProgram();
         gridShaderProgram = CreateShaderProgram("grid.vert", "grid.frag");
 
@@ -225,6 +232,11 @@ struct Engine {
         auto result = QuadVAO();
         this->quadVAO = result[0];
         this->texture = result[1];
+
+        // Initialize GL state
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        glDepthFunc(GL_LESS);
     }
     void generateGrid(const vector<ObjectData>& objects) {
         const int gridSize = 25;
@@ -310,6 +322,7 @@ struct Engine {
         glDrawElements(GL_LINES, gridIndexCount, GL_UNSIGNED_INT, 0);
 
         glBindVertexArray(0);
+        glDisable(GL_BLEND);  // Restore blend state
         glEnable(GL_DEPTH_TEST);
     }
     void drawFullScreenQuad() {
@@ -321,7 +334,7 @@ struct Engine {
         glUniform1i(glGetUniformLocation(shaderProgram, "screenTexture"), 0);
 
         glDisable(GL_DEPTH_TEST);  // draw as background
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 6);  // 2 triangles
+        glDrawArrays(GL_TRIANGLES, 0, 6);  // 2 triangles
         glEnable(GL_DEPTH_TEST);
     }
     GLuint CreateShaderProgram(){
@@ -480,8 +493,14 @@ struct Engine {
         GLuint groupsY = (GLuint)std::ceil(ch / 16.0f);
         glDispatchCompute(groupsX, groupsY, 1);
 
-        // 4) sync
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        // 4) sync - ensure texture is ready for sampling in fragment shader
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+        // Check for OpenGL errors
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            std::cerr << "OpenGL error after compute dispatch: " << err << std::endl;
+        }
     }
     void uploadCameraUBO(const Camera& cam) {
         struct UBOData {
@@ -574,7 +593,8 @@ struct Engine {
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D,
                     0,             // mip
                     GL_RGBA8,      // internal format

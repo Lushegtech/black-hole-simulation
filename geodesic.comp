@@ -123,6 +123,11 @@ void main() {
     ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
     if (pix.x >= WIDTH || pix.y >= HEIGHT) return;
 
+    // DEBUG: Test pattern to verify rendering pipeline
+    // Uncomment this to see a gradient test pattern:
+    // imageStore(outImage, pix, vec4(float(pix.x)/WIDTH, float(pix.y)/HEIGHT, 0.5, 1.0));
+    // return;
+
     // Init Ray
     float u = (2.0 * (pix.x + 0.5) / WIDTH - 1.0) * cam.aspect * cam.tanHalfFov;
     float v = (1.0 - 2.0 * (pix.y + 0.5) / HEIGHT) * cam.tanHalfFov;
