@@ -475,9 +475,9 @@ struct Engine {
         return prog;
     }
     void dispatchCompute(const Camera& cam) {
-        // FIXED SIZE - always use full resolution
-        int cw = COMPUTE_WIDTH;  // Always 800
-        int ch = COMPUTE_HEIGHT; // Always 600
+        // Use current window dimensions
+        int cw = WIDTH;
+        int ch = HEIGHT;
 
         // 1) bind compute program & UBOs
         glUseProgram(computeProgram);
@@ -607,6 +607,20 @@ struct Engine {
         vector<GLuint> VAOtexture = {VAO, texture};
         return VAOtexture;
     }
+    void resize(int w, int h) {
+        if (w <= 0 || h <= 0) return;
+        if (w == WIDTH && h == HEIGHT) return;
+        
+        WIDTH = w;
+        HEIGHT = h;
+        COMPUTE_WIDTH = w;
+        COMPUTE_HEIGHT = h;
+
+        // Recreate texture
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
     void renderScene() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(shaderProgram);
@@ -655,6 +669,11 @@ int main() {
 
     double lastTime = glfwGetTime();
     int   renderW  = 800, renderH = 600, numSteps = 80000;
+    
+    // Fix viewport - resize texture to match actual window size
+    glfwGetFramebufferSize(engine.window, &renderW, &renderH);
+    engine.resize(renderW, renderH);
+    
     while (!glfwWindowShouldClose(engine.window)) {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // optional, but good practice
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
